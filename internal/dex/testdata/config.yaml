@@ -1,0 +1,34 @@
+issuer: http://127.0.0.1:5556/dex
+storage:
+    type: sqlite3
+    config:
+        file: var/sqlite/dex.db
+web:
+    http: 127.0.0.1:5556
+grpc:
+    addr: 127.0.0.1:5557
+connectors:
+    - type: ldap
+      name: LDAP
+      id: ldap
+      config:
+        host: ldap.example.com:636
+        rootCA: /etc/dex/ssl/ldap-ca/ca.crt
+        bindDN: cn=admin,dc=example,dc=com
+        bindPW: password
+        usernamePrompt: SSO Username
+        userSearch:
+            baseDN: ou=users,dc=example,dc=com
+            filter: (objectClass=person)
+            username: uid
+            idAttr: uid
+            emailAttr: mail
+            nameAttr: name
+            preferredUsernameAttr: uid
+        groupSearch:
+            baseDN: cn=groups,dc=example,dc=com
+            filter: (objectClass=group)
+            nameAttr: name
+            userMatchers:
+                - userAttr: uid
+                  groupAttr: member

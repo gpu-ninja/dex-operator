@@ -1,0 +1,54 @@
+kind: DexIdentityProvider
+apiVersion: dex.gpu-ninja.com/v1alpha1
+metadata:
+  name: demo
+spec:
+  image: dexidp/dex:v2.37.0
+  clientCertificateSecretRef:
+    name: demo-operator-client-tls
+  issuer: https://dex.example.com
+  storage:
+    type: sqlite3
+    sqlite3:
+      file: /var/lib/dex/dex.db
+  localStorage:
+    mountPath: /var/lib/dex
+    size: 1Gi
+  web:
+    https: ":8443"
+    certificateSecretRef:
+      name: demo-tls
+    allowedOrigins:
+    - https://dex.example.com
+  grpc:
+    addr: ":8081"
+    certificateSecretRef:
+      name: demo-tls
+    clientCASecretRef:
+      name: demo-api-ca-tls
+    reflection: true
+  connectors:
+  - type: ldap
+    name: LDAP
+    id: ldap
+    ldap:
+      host: ldap.example.com:636
+      caSecretRef:
+        name: ca-tls
+      bindCredentialsSecretRef:
+        name: ldap-bind-credentials
+      userSearch:
+        baseDN: ou=users,dc=example,dc=com
+        filter: (objectClass=person)
+        username: uid
+        idAttr: uid
+        emailAttr: mail
+        nameAttr: name
+        preferredUsernameAttr: uid
+      groupSearch:
+        baseDN: ou=groups,dc=example,dc=com
+        filter: "(objectClass=groupOfNames)"
+        nameAttr: cn
+        userMatchers:
+        - userAttr: uid
+          groupAttr: member

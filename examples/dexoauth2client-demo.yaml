@@ -1,0 +1,10 @@
+kind: DexOAuth2Client
+apiVersion: dex.gpu-ninja.com/v1alpha1
+metadata:
+  name: demo
+spec:
+  identityProviderRef:
+    name: demo
+  secretName: demo-client-secret
+  redirectURIs:
+  - https://client.example.com/callback

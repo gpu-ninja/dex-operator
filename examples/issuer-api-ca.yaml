@@ -1,0 +1,18 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: demo-api-ca
+spec:
+  secretName: demo-api-ca-tls
+  issuerRef:
+    name: ca
+  isCA: true
+  commonName: Demo API Authority
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: demo-api-ca
+spec:
+  ca:
+    secretName: demo-api-ca-tls

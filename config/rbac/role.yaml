@@ -1,0 +1,105 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - dex.gpu-ninja.com
+  resources:
+  - dexidentityproviders
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - dex.gpu-ninja.com
+  resources:
+  - dexidentityproviders/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - dex.gpu-ninja.com
+  resources:
+  - dexidentityproviders/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - dex.gpu-ninja.com
+  resources:
+  - dexoauth2clients
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - dex.gpu-ninja.com
+  resources:
+  - dexoauth2clients/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - dex.gpu-ninja.com
+  resources:
+  - dexoauth2clients/status
+  verbs:
+  - get
+  - patch
+  - update
