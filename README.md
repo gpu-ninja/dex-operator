@@ -34,16 +34,11 @@ kapp deploy -a dex-operator -f https://github.com/gpu-ninja/dex-operator/release
 ### Starting a Dex Server
 
 ```shell
-kubectl apply -f examples/issuer-ca.yaml \
-  -f examples/issuer-api-ca.yaml \
-  -f examples/certificate-demo.yaml \
-  -f examples/certificate-demo-operator-client.yaml \
-  -f examples/secret-ldap-bind-credentials.yaml \
-  -f examples/dexidentityprovider-demo.yaml
+kubectl apply -f examples -l app.kubernetes.io/component=server
 ```
 
 ### Creating an OAuth2 Client
 
 ```shell
-kubectl apply -f examples/dexoauth2client-demo.yaml
+kubectl apply -f examples -l app.kubernetes.io/component=client
 ```

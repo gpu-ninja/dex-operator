@@ -2,6 +2,8 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: demo-api-ca
+  labels:
+    app.kubernetes.io/component: server
 spec:
   secretName: demo-api-ca-tls
   issuerRef:
@@ -13,6 +15,8 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: demo-api-ca
+  labels:
+    app.kubernetes.io/component: server
 spec:
   ca:
     secretName: demo-api-ca-tls

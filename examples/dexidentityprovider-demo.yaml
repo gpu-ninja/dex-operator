@@ -2,6 +2,8 @@ kind: DexIdentityProvider
 apiVersion: dex.gpu-ninja.com/v1alpha1
 metadata:
   name: demo
+  labels:
+    app.kubernetes.io/component: server
 spec:
   image: dexidp/dex:v2.37.0
   clientCertificateSecretRef:

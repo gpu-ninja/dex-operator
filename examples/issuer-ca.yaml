@@ -2,6 +2,8 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: selfsigned-issuer
+  labels:
+    app.kubernetes.io/component: server
 spec:
   selfSigned: {}
 ---
@@ -9,6 +11,8 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: ca
+  labels:
+    app.kubernetes.io/component: server
 spec:
   isCA: true
   secretName: ca-tls
@@ -20,6 +24,8 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: ca
+  labels:
+    app.kubernetes.io/component: server
 spec:
   ca:
     secretName: ca-tls
