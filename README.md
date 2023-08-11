@@ -15,8 +15,8 @@ not listed here, please open an issue or submit a PR!
 
 ### Connectors
 
-* LDAP
-* OpenID Connect (OIDC)
+* [LDAP](https://dexidp.io/docs/connectors/ldap/)
+* [OpenID Connect (OIDC)](https://dexidp.io/docs/connectors/oidc/)
 
 ## Getting Started
 
