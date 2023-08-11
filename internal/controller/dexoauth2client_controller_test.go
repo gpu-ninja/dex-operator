@@ -26,6 +26,7 @@ import (
 	dexapi "github.com/dexidp/dex/api/v2"
 	"github.com/gpu-ninja/dex-operator/api"
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
+	"github.com/gpu-ninja/dex-operator/internal/constants"
 	"github.com/gpu-ninja/dex-operator/internal/controller"
 	"github.com/gpu-ninja/dex-operator/internal/dex"
 	fakeutils "github.com/gpu-ninja/operator-utils/fake"
@@ -156,7 +157,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 	t.Run("Delete", func(t *testing.T) {
 		deletingOauth2Client := oauth2Client.DeepCopy()
 		deletingOauth2Client.DeletionTimestamp = &metav1.Time{Time: metav1.Now().Add(-1 * time.Second)}
-		deletingOauth2Client.Finalizers = []string{"finalizer.dex.gpu-ninja.com"}
+		deletingOauth2Client.Finalizers = []string{constants.FinalizerName}
 
 		eventRecorder := record.NewFakeRecorder(2)
 		r.EventRecorder = eventRecorder
@@ -250,7 +251,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 		require.Len(t, eventRecorder.Events, 1)
 		event := <-eventRecorder.Events
-		assert.Equal(t, "Warning NotReady Dex identity provider test in namespace default not ready", event)
+		assert.Equal(t, "Warning NotReady Dex identity provider is not ready", event)
 
 		updatedOAuth2Client := oauth2Client.DeepCopy()
 		err = subResourceClient.Get(ctx, oauth2Client, updatedOAuth2Client)
@@ -287,7 +288,6 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 				Namespace: oauth2Client.Namespace,
 			},
 		})
-		// We don't rely on the default error requeing behavior.
 		require.NoError(t, err)
 		assert.Zero(t, resp)
 

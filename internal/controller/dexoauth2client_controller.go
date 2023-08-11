@@ -37,6 +37,7 @@ import (
 	"github.com/dexidp/dex/api/v2"
 	"github.com/google/uuid"
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
+	"github.com/gpu-ninja/dex-operator/internal/constants"
 	"github.com/gpu-ninja/dex-operator/internal/dex"
 	"github.com/gpu-ninja/operator-utils/retryable"
 	"github.com/gpu-ninja/operator-utils/zaplogr"
@@ -69,11 +70,11 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if !controllerutil.ContainsFinalizer(&oauth2Client, finalizerName) {
+	if !controllerutil.ContainsFinalizer(&oauth2Client, constants.FinalizerName) {
 		logger.Info("Adding Finalizer")
 
 		_, err := controllerutil.CreateOrPatch(ctx, r.Client, &oauth2Client, func() error {
-			controllerutil.AddFinalizer(&oauth2Client, finalizerName)
+			controllerutil.AddFinalizer(&oauth2Client, constants.FinalizerName)
 
 			return nil
 		})
@@ -90,7 +91,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				// So there is probably no point in retrying.
 
 				_, err := controllerutil.CreateOrPatch(ctx, r.Client, &oauth2Client, func() error {
-					controllerutil.RemoveFinalizer(&oauth2Client, finalizerName)
+					controllerutil.RemoveFinalizer(&oauth2Client, constants.FinalizerName)
 
 					return nil
 				})
@@ -110,7 +111,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				return ctrl.Result{}, err
 			}
 
-			return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
+			return ctrl.Result{RequeueAfter: constants.ReconcileRetryInterval}, nil
 		}
 
 		logger.Error("Failed to resolve references", zap.Error(err))
@@ -142,15 +143,14 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		logger.Warn("Referenced Dex Identity Provider not ready",
 			zap.String("namespace", idp.Namespace), zap.String("name", idp.Name))
 
-		r.EventRecorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
-			"NotReady", "Dex identity provider %s in namespace %s not ready",
-			idp.Name, idp.Namespace)
+		r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
+			"NotReady", "Dex identity provider is not ready")
 
 		if err := r.markPending(ctx, &oauth2Client); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
+		return ctrl.Result{RequeueAfter: constants.ReconcileRetryInterval}, nil
 	}
 
 	clientSecretNamespaceName := types.NamespacedName{
@@ -191,7 +191,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				// Don't block deletion.
 				logger.Error("Failed to build Dex API client, skipping deletion", zap.Error(err))
 			} else {
-				oauth2ClientID := clientSecret.Data["client_id"]
+				oauth2ClientID := clientSecret.Data["id"]
 				_, err := dexAPIClient.DeleteClient(ctx, &api.DeleteClientReq{
 					Id: string(oauth2ClientID),
 				})
@@ -202,11 +202,11 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			}
 		}
 
-		if controllerutil.ContainsFinalizer(&oauth2Client, finalizerName) {
+		if controllerutil.ContainsFinalizer(&oauth2Client, constants.FinalizerName) {
 			logger.Info("Removing Finalizer")
 
 			_, err := controllerutil.CreateOrPatch(ctx, r.Client, &oauth2Client, func() error {
-				controllerutil.RemoveFinalizer(&oauth2Client, finalizerName)
+				controllerutil.RemoveFinalizer(&oauth2Client, constants.FinalizerName)
 
 				return nil
 			})
@@ -239,44 +239,22 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return ctrl.Result{}, err
 		}
 
-		// Could very well be a temporary error, so retry.
-		return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
+		return ctrl.Result{}, fmt.Errorf("failed to build dex api client: %w", err)
 	}
 
-	if creating {
-		logger.Info("Creating new Dex OAuth2 Client secret")
-
-		oauth2ClientID := uuid.New().String()
-		oauth2ClientSecret := generateRandomString(16)
-
-		_, err := controllerutil.CreateOrPatch(ctx, r.Client, &clientSecret, func() error {
-			if err := controllerutil.SetControllerReference(&oauth2Client, &clientSecret, r.Scheme); err != nil {
-				return fmt.Errorf("failed to set controller reference: %w", err)
-			}
-
-			clientSecret.StringData = map[string]string{
-				"client_id":     oauth2ClientID,
-				"client_secret": oauth2ClientSecret,
-			}
-
-			return nil
-		})
-		if err != nil {
-			logger.Error("Failed to create Dex OAuth2 Client secret", zap.Error(err))
-
-			r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
-				"Failed", "Failed to create dex oauth2 client secret")
-
-			r.markFailed(ctx, &oauth2Client, fmt.Errorf("failed to create dex oauth2 client secret: %w", err))
-
-			return ctrl.Result{}, nil
-		}
+	var oauth2ClientID, oauth2ClientSecret string
+	if !creating {
+		oauth2ClientID = string(clientSecret.Data["id"])
+		oauth2ClientSecret = string(clientSecret.Data["secret"])
+	} else {
+		oauth2ClientID = uuid.New().String()
+		oauth2ClientSecret = generateRandomString(16)
 	}
 
 	// TODO: use GetClient() when it is released.
 
 	updateResp, err := dexAPIClient.UpdateClient(ctx, &api.UpdateClientReq{
-		Id:           string(clientSecret.Data["client_id"]),
+		Id:           oauth2ClientID,
 		RedirectUris: oauth2Client.Spec.RedirectURIs,
 		TrustedPeers: oauth2Client.Spec.TrustedPeers,
 		Name:         oauth2Client.Spec.Name,
@@ -292,8 +270,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return ctrl.Result{}, err
 		}
 
-		// Could very well be transient, so retry.
-		return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
+		return ctrl.Result{}, fmt.Errorf("failed to update dex oauth2 client: %w", err)
 	}
 
 	if updateResp.NotFound {
@@ -301,8 +278,8 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 		_, err = dexAPIClient.CreateClient(ctx, &api.CreateClientReq{
 			Client: &api.Client{
-				Id:           string(clientSecret.Data["client_id"]),
-				Secret:       string(clientSecret.Data["client_secret"]),
+				Id:           oauth2ClientID,
+				Secret:       oauth2ClientSecret,
 				RedirectUris: oauth2Client.Spec.RedirectURIs,
 				TrustedPeers: oauth2Client.Spec.TrustedPeers,
 				Public:       oauth2Client.Spec.Public,
@@ -323,6 +300,33 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
+	if creating {
+		logger.Info("Saving Dex OAuth2 Client secret")
+
+		_, err := controllerutil.CreateOrPatch(ctx, r.Client, &clientSecret, func() error {
+			if err := controllerutil.SetControllerReference(&oauth2Client, &clientSecret, r.Scheme); err != nil {
+				return fmt.Errorf("failed to set controller reference: %w", err)
+			}
+
+			clientSecret.StringData = map[string]string{
+				"id":     oauth2ClientID,
+				"secret": oauth2ClientSecret,
+			}
+
+			return nil
+		})
+		if err != nil {
+			logger.Error("Failed to create Dex OAuth2 Client secret", zap.Error(err))
+
+			r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
+				"Failed", "Failed to create dex oauth2 client secret")
+
+			r.markFailed(ctx, &oauth2Client, fmt.Errorf("failed to create dex oauth2 client secret: %w", err))
+
+			return ctrl.Result{}, nil
+		}
+	}
+
 	if oauth2Client.Status.Phase != dexv1alpha1.DexOAuth2ClientPhaseReady {
 		r.EventRecorder.Event(&oauth2Client, corev1.EventTypeNormal,
 			"Created", "Successfully created")
@@ -337,6 +341,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 func (r *DexOAuth2ClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("dexoauth2client-controller").
 		For(&dexv1alpha1.DexOAuth2Client{}).
 		Owns(&corev1.Secret{}).
 		Complete(r)

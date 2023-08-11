@@ -24,10 +24,10 @@ import (
 	"net"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	"dario.cat/mergo"
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
+	"github.com/gpu-ninja/dex-operator/internal/constants"
 	"github.com/gpu-ninja/dex-operator/internal/dex"
 	"github.com/gpu-ninja/operator-utils/retryable"
 	"github.com/gpu-ninja/operator-utils/zaplogr"
@@ -63,11 +63,6 @@ import (
 //+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders/finalizers,verbs=update
 
-const (
-	finalizerName          = "finalizer.dex.gpu-ninja.com"
-	reconcileRetryInterval = 5 * time.Second
-)
-
 // DexIdentityProviderReconciler reconciles a DexIdentityProvider object
 type DexIdentityProviderReconciler struct {
 	client.Client
@@ -89,11 +84,11 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	if !controllerutil.ContainsFinalizer(&idp, finalizerName) {
+	if !controllerutil.ContainsFinalizer(&idp, constants.FinalizerName) {
 		logger.Info("Adding Finalizer")
 
 		_, err := controllerutil.CreateOrPatch(ctx, r.Client, &idp, func() error {
-			controllerutil.AddFinalizer(&idp, finalizerName)
+			controllerutil.AddFinalizer(&idp, constants.FinalizerName)
 
 			return nil
 		})
@@ -105,11 +100,11 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 	if !idp.ObjectMeta.DeletionTimestamp.IsZero() {
 		logger.Info("Deleting Dex Identity Provider")
 
-		if controllerutil.ContainsFinalizer(&idp, finalizerName) {
+		if controllerutil.ContainsFinalizer(&idp, constants.FinalizerName) {
 			logger.Info("Removing Finalizer")
 
 			_, err := controllerutil.CreateOrPatch(ctx, r.Client, &idp, func() error {
-				controllerutil.RemoveFinalizer(&idp, finalizerName)
+				controllerutil.RemoveFinalizer(&idp, constants.FinalizerName)
 
 				return nil
 			})
@@ -133,7 +128,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 				return ctrl.Result{}, err
 			}
 
-			return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
+			return ctrl.Result{RequeueAfter: constants.ReconcileRetryInterval}, nil
 		}
 
 		logger.Error("Failed to resolve references", zap.Error(err))
@@ -533,7 +528,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
+		return ctrl.Result{RequeueAfter: constants.ReconcileRetryInterval}, nil
 	}
 
 	if idp.Status.Phase != dexv1alpha1.DexIdentityProviderPhaseReady {
@@ -550,6 +545,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 
 func (r *DexIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("dexidentityprovider-controller").
 		For(&dexv1alpha1.DexIdentityProvider{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).

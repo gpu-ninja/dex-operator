@@ -24,6 +24,7 @@ import (
 	"time"
 
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
+	"github.com/gpu-ninja/dex-operator/internal/constants"
 	"github.com/gpu-ninja/dex-operator/internal/controller"
 	fakeutils "github.com/gpu-ninja/operator-utils/fake"
 	"github.com/gpu-ninja/operator-utils/reference"
@@ -266,7 +267,7 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 	t.Run("Delete", func(t *testing.T) {
 		deletingIDP := idp.DeepCopy()
 		deletingIDP.DeletionTimestamp = &metav1.Time{Time: metav1.Now().Add(-1 * time.Second)}
-		deletingIDP.Finalizers = []string{"finalizer.dex.gpu-ninja.com"}
+		deletingIDP.Finalizers = []string{constants.FinalizerName}
 
 		eventRecorder := record.NewFakeRecorder(2)
 		r.EventRecorder = eventRecorder
@@ -351,7 +352,6 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 				Namespace: idp.Namespace,
 			},
 		})
-		// We don't rely on the default error requeing behavior.
 		require.NoError(t, err)
 		assert.Zero(t, resp)
 
