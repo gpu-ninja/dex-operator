@@ -28,7 +28,7 @@ not listed here, please open an issue or submit a PR!
 ### Installing
 
 ```shell
-kapp deploy -a dex-operator -f config/
+kapp deploy -a dex-operator -f https://github.com/gpu-ninja/dex-operator/releases/latest/download/dex-operator.yaml
 ```
 
 ### Starting a Dex Server

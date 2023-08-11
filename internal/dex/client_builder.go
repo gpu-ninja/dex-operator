@@ -22,11 +22,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"net"
-	"strings"
 
 	"github.com/dexidp/dex/api/v2"
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
+	"github.com/gpu-ninja/operator-utils/k8sutils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -77,7 +76,7 @@ func (b *clientBuilderImpl) WithIdentityProvider(idp *dexv1alpha1.DexIdentityPro
 }
 
 func (b *clientBuilderImpl) Build(ctx context.Context) (api.DexClient, error) {
-	hostAndPort := fmt.Sprintf("%s-api.%s.svc.%s:443", b.idp.Name, b.idp.Namespace, getClusterDomain())
+	hostAndPort := fmt.Sprintf("%s-api.%s.svc.%s:443", b.idp.Name, b.idp.Namespace, k8sutils.GetClusterDomain())
 
 	transportCredentials := insecure.NewCredentials()
 	if b.idp.Spec.GRPC.CertificateSecretRef != nil {
@@ -118,16 +117,4 @@ func (b *clientBuilderImpl) Build(ctx context.Context) (api.DexClient, error) {
 	}
 
 	return api.NewDexClient(conn), nil
-}
-
-func getClusterDomain() string {
-	apiSvc := "kubernetes.default.svc"
-
-	cname, err := net.LookupCNAME(apiSvc)
-	if err != nil {
-		return "cluster.local"
-	}
-
-	clusterDomain := strings.TrimPrefix(cname, apiSvc)
-	return strings.TrimSuffix(clusterDomain, ".")
 }
