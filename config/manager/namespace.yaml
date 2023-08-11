@@ -4,9 +4,8 @@ metadata:
   labels:
     control-plane: controller-manager
     app.kubernetes.io/name: namespace
-    app.kubernetes.io/instance: system
+    app.kubernetes.io/instance: dex-operator
     app.kubernetes.io/component: manager
     app.kubernetes.io/created-by: dex-operator
     app.kubernetes.io/part-of: dex-operator
-    app.kubernetes.io/managed-by: kustomize
-  name: system
+  name: dex-operator
