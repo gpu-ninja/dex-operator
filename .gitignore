@@ -20,3 +20,6 @@ bin/
 
 # Go workspace file
 go.work
+
+# Configuration bundles (these will be generated via CI)
+bundle/

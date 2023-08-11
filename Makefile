@@ -35,7 +35,7 @@ clean:
 bundle: $(KBLD) bundle/dex-operator.yaml
 
 bundle/dex-operator.yaml: $(KBLD) generate
-	-mkdir -p deploy
+	-mkdir -p bundle
 	$(KBLD) -f config > $@
 
 ifeq ($(shell uname -m),x86_64)
