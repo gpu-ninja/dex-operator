@@ -73,7 +73,7 @@ type DexIdentityProviderReconciler struct {
 func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := zaplogr.FromContext(ctx)
 
-	logger.Info("Reconciling Dex Identity Provider")
+	logger.Info("Reconciling")
 
 	var idp dexv1alpha1.DexIdentityProvider
 	if err := r.Get(ctx, req.NamespacedName, &idp); err != nil {
@@ -97,8 +97,8 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 	}
 
-	if !idp.ObjectMeta.DeletionTimestamp.IsZero() {
-		logger.Info("Deleting Dex Identity Provider")
+	if !idp.GetDeletionTimestamp().IsZero() {
+		logger.Info("Deleting")
 
 		if controllerutil.ContainsFinalizer(&idp, constants.FinalizerName) {
 			logger.Info("Removing Finalizer")
@@ -136,27 +136,29 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
 			"Failed", "Failed to resolve references: %s", err)
 
-		r.markFailed(ctx, &idp, fmt.Errorf("failed to resolve references: %w", err))
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to resolve references: %w", err))
 
 		return ctrl.Result{}, nil
 	}
 
 	if idp.Status.Phase == dexv1alpha1.DexIdentityProviderPhaseFailed {
-		logger.Info("Dex Identity Provider is in failed state, ignoring")
+		logger.Info("In failed state, ignoring")
 
 		return ctrl.Result{}, nil
 	}
 
-	logger.Info("Creating or updating Dex Identity Provider")
+	logger.Info("Creating or updating")
 
 	configSecretName, err := r.saveDexConfig(ctx, &idp)
 	if err != nil {
 		logger.Error("Failed to render Dex config", zap.Error(err))
 
 		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to render Dex config: %s", err)
+			"Failed", "Failed to render dex config: %s", err)
 
-		r.markFailed(ctx, &idp, fmt.Errorf("failed to render dex config: %w", err))
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to render dex config: %w", err))
 
 		return ctrl.Result{}, nil
 	}
@@ -176,8 +178,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		creatingStatefulSet = true
 	}
 
-	logger.Info("Reconciling Dex Identity Provider StatefulSet",
-		zap.Bool("creating", creatingStatefulSet))
+	logger.Info("Reconciling StatefulSet", zap.Bool("creating", creatingStatefulSet))
 
 	statefulSetOpResult, err := controllerutil.CreateOrPatch(ctx, r.Client, &statefulSet, func() error {
 		volumes, volumeMounts, err := r.getDexCertificateVolumes(ctx, &idp)
@@ -340,19 +341,19 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		return nil
 	})
 	if err != nil {
-		logger.Error("Failed to reconcile Dex Identity Provider StatefulSet", zap.Error(err))
+		logger.Error("Failed to reconcile StatefulSet", zap.Error(err))
 
 		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to reconcile Dex Identity Provider StatefulSet: %v", err)
+			"Failed", "Failed to reconcile statefulset: %s", err)
 
 		r.markFailed(ctx, &idp,
-			fmt.Errorf("failed to reconcile dex identity provider statefulset: %w", err))
+			fmt.Errorf("failed to reconcile statefulset: %w", err))
 
 		return ctrl.Result{}, nil
 	}
 
 	if statefulSetOpResult != controllerutil.OperationResultNone {
-		logger.Info("Dex Identity Provider StatefulSet successfully reconciled, marking as pending",
+		logger.Info("StatefulSet successfully reconciled, marking as pending",
 			zap.String("operation", string(statefulSetOpResult)))
 
 		if err := r.markPending(ctx, &idp); err != nil {
@@ -373,7 +374,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		creatingWebService = true
 	}
 
-	logger.Info("Reconciling Dex Identity Provider Web Service", zap.Bool("creating", creatingWebService))
+	logger.Info("Reconciling Web Service", zap.Bool("creating", creatingWebService))
 
 	webServiceOpResult, err := controllerutil.CreateOrPatch(ctx, r.Client, &webService, func() error {
 		var ports []corev1.ServicePort
@@ -425,18 +426,19 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		return nil
 	})
 	if err != nil {
-		logger.Error("Failed to reconcile Dex Identity Provider Web Service", zap.Error(err))
+		logger.Error("Failed to reconcile Web Service", zap.Error(err))
 
 		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to reconcile dex idp web service: %v", err)
+			"Failed", "Failed to reconcile web service: %s", err)
 
-		r.markFailed(ctx, &idp, fmt.Errorf("failed to reconcile dex idp web service: %w", err))
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to reconcile web service: %w", err))
 
 		return ctrl.Result{}, nil
 	}
 
 	if webServiceOpResult != controllerutil.OperationResultNone {
-		logger.Info("Dex Identity Provider Web Service successfully reconciled",
+		logger.Info("Web Service successfully reconciled",
 			zap.String("operation", string(webServiceOpResult)))
 	}
 
@@ -453,7 +455,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		creatingAPIService = true
 	}
 
-	logger.Info("Reconciling Dex Identity Provider API Service", zap.Bool("creating", creatingAPIService))
+	logger.Info("Reconciling API Service", zap.Bool("creating", creatingAPIService))
 
 	apiServiceOpResult, err := controllerutil.CreateOrPatch(ctx, r.Client, &apiService, func() error {
 		var ports []corev1.ServicePort
@@ -503,26 +505,27 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		return nil
 	})
 	if err != nil {
-		logger.Error("Failed to reconcile Dex Identity Provider API Service", zap.Error(err))
+		logger.Error("Failed to reconcile API Service", zap.Error(err))
 
 		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to reconcile dex idp api service: %v", err)
+			"Failed", "Failed to reconcile api service: %s", err)
 
-		r.markFailed(ctx, &idp, fmt.Errorf("failed to reconcile dex idp api service: %w", err))
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to reconcile api service: %w", err))
 
 		return ctrl.Result{}, nil
 	}
 
 	if apiServiceOpResult != controllerutil.OperationResultNone {
-		logger.Info("Dex Identity Provider API Service successfully reconciled",
+		logger.Info("API Service successfully reconciled",
 			zap.String("operation", string(apiServiceOpResult)))
 	}
 
 	if statefulSet.Status.ReadyReplicas != *statefulSet.Spec.Replicas {
-		logger.Info("Waiting for Dex Identity Provider to become ready")
+		logger.Info("Waiting for StatefulSet to become ready")
 
 		r.EventRecorder.Event(&idp, corev1.EventTypeNormal,
-			"Pending", "Waiting for dex idp to become ready")
+			"Pending", "Waiting for statefulset to become ready")
 
 		if err := r.markPending(ctx, &idp); err != nil {
 			return ctrl.Result{}, err

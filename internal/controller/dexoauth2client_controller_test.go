@@ -251,7 +251,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 		require.Len(t, eventRecorder.Events, 1)
 		event := <-eventRecorder.Events
-		assert.Equal(t, "Warning NotReady Dex identity provider is not ready", event)
+		assert.Equal(t, "Warning NotReady Referenced identity provider is not ready", event)
 
 		updatedOAuth2Client := oauth2Client.DeepCopy()
 		err = subResourceClient.Get(ctx, oauth2Client, updatedOAuth2Client)
@@ -293,7 +293,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 		require.Len(t, eventRecorder.Events, 1)
 		event := <-eventRecorder.Events
-		assert.Equal(t, "Warning Failed Failed to get dex oauth2 client secret", event)
+		assert.Equal(t, "Warning Failed Failed to get client secret", event)
 
 		updatedOAuth2Client := oauth2Client.DeepCopy()
 		err = subResourceClient.Get(ctx, oauth2Client, updatedOAuth2Client)

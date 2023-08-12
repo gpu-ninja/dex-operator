@@ -58,7 +58,7 @@ type DexOAuth2ClientReconciler struct {
 func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := zaplogr.FromContext(ctx)
 
-	logger.Info("Reconciling Dex OAuth2 Client")
+	logger.Info("Reconciling")
 
 	var oauth2Client dexv1alpha1.DexOAuth2Client
 	err := r.Get(ctx, req.NamespacedName, &oauth2Client)
@@ -119,20 +119,21 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		r.EventRecorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
 			"Failed", "Failed to resolve references: %s", err)
 
-		r.markFailed(ctx, &oauth2Client, fmt.Errorf("failed to resolve references: %w", err))
+		r.markFailed(ctx, &oauth2Client,
+			fmt.Errorf("failed to resolve references: %w", err))
 
 		return ctrl.Result{}, nil
 	}
 
 	idpObj, err := oauth2Client.Spec.IdentityProviderRef.Resolve(ctx, r.Client, r.Scheme, &oauth2Client)
 	if err != nil {
-		logger.Error("Failed to resolve Dex Identity Provider reference", zap.Error(err))
+		logger.Error("Failed to resolve Identity Provider reference", zap.Error(err))
 
 		r.EventRecorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
-			"Failed", "Failed to resolve dex identity provider reference: %s", err)
+			"Failed", "Failed to resolve identity provider reference: %s", err)
 
 		r.markFailed(ctx, &oauth2Client,
-			fmt.Errorf("failed to resolve dex identity provider reference: %w", err))
+			fmt.Errorf("failed to resolve identity provider reference: %w", err))
 
 		return ctrl.Result{}, nil
 	}
@@ -140,11 +141,11 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// Is the dex identity provider ready?
 	if idp.Status.Phase != dexv1alpha1.DexIdentityProviderPhaseReady {
-		logger.Warn("Referenced Dex Identity Provider not ready",
+		logger.Info("Referenced Identity Provider not ready",
 			zap.String("namespace", idp.Namespace), zap.String("name", idp.Name))
 
 		r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
-			"NotReady", "Dex identity provider is not ready")
+			"NotReady", "Referenced identity provider is not ready")
 
 		if err := r.markPending(ctx, &oauth2Client); err != nil {
 			return ctrl.Result{}, err
@@ -169,19 +170,20 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if errors.IsNotFound(err) {
 			creating = true
 		} else {
-			logger.Error("Failed to get Dex OAuth2 Client secret", zap.Error(err))
+			logger.Error("Failed to get client secret", zap.Error(err))
 
 			r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
-				"Failed", "Failed to get dex oauth2 client secret")
+				"Failed", "Failed to get client secret")
 
-			r.markFailed(ctx, &oauth2Client, fmt.Errorf("failed to get dex oauth2 client secret: %w", err))
+			r.markFailed(ctx, &oauth2Client,
+				fmt.Errorf("failed to get client secret: %w", err))
 
 			return ctrl.Result{}, nil
 		}
 	}
 
-	if !oauth2Client.ObjectMeta.DeletionTimestamp.IsZero() {
-		logger.Info("Deleting Dex OAuth2 Client")
+	if !oauth2Client.GetDeletionTimestamp().IsZero() {
+		logger.Info("Deleting")
 
 		if !creating {
 			dexAPIClient, err := r.DexClientBuilder.
@@ -189,7 +191,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				Build(ctx)
 			if err != nil {
 				// Don't block deletion.
-				logger.Error("Failed to build Dex API client, skipping deletion", zap.Error(err))
+				logger.Error("Failed to build api client, skipping deletion", zap.Error(err))
 			} else {
 				oauth2ClientID := clientSecret.Data["id"]
 				_, err := dexAPIClient.DeleteClient(ctx, &api.DeleteClientReq{
@@ -197,7 +199,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				})
 				if err != nil {
 					// Don't block deletion.
-					logger.Error("Failed to delete Dex OAuth2 Client, skipping deletion", zap.Error(err))
+					logger.Error("Failed to delete, skipping deletion", zap.Error(err))
 				}
 			}
 		}
@@ -219,27 +221,39 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	if oauth2Client.Status.Phase == dexv1alpha1.DexOAuth2ClientPhaseFailed {
-		logger.Info("Dex OAuth2 Client is in failed state, ignoring")
+		logger.Info("In failed state, ignoring")
 
 		return ctrl.Result{}, nil
 	}
 
-	logger.Info("Creating or updating Dex OAuth2 Client")
+	logger.Info("Creating or updating")
+
+	if err := r.setOwner(ctx, &oauth2Client, idp); err != nil {
+		logger.Error("Failed to set owner reference", zap.Error(err))
+
+		r.EventRecorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
+			"Failed", "Failed to set owner reference: %s", err)
+
+		r.markFailed(ctx, &oauth2Client,
+			fmt.Errorf("failed to set owner reference: %w", err))
+
+		return ctrl.Result{}, nil
+	}
 
 	dexAPIClient, err := r.DexClientBuilder.
 		WithIdentityProvider(idp).
 		Build(ctx)
 	if err != nil {
-		logger.Error("Failed to build Dex API client", zap.Error(err))
+		logger.Error("Failed to build api client", zap.Error(err))
 
 		r.EventRecorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
-			"Failed", "Failed to build Dex API client: %s", err)
+			"Failed", "Failed to build api client: %s", err)
 
 		if err := r.markPending(ctx, &oauth2Client); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{}, fmt.Errorf("failed to build dex api client: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to build api client: %w", err)
 	}
 
 	var oauth2ClientID, oauth2ClientSecret string
@@ -261,20 +275,20 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		LogoUrl:      oauth2Client.Spec.LogoURL,
 	})
 	if err != nil {
-		logger.Error("Failed to update Dex OAuth2 Client", zap.Error(err))
+		logger.Error("Failed to update client via Dex API", zap.Error(err))
 
 		r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
-			"Failed", "Failed to update dex oauth2 client")
+			"Failed", "Failed to update client via dex api")
 
 		if err := r.markPending(ctx, &oauth2Client); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{}, fmt.Errorf("failed to update dex oauth2 client: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to update client via dex api: %w", err)
 	}
 
 	if updateResp.NotFound {
-		logger.Info("Dex OAuth2 Client not found, creating")
+		logger.Info("Client not found, creating")
 
 		_, err = dexAPIClient.CreateClient(ctx, &api.CreateClientReq{
 			Client: &api.Client{
@@ -288,20 +302,20 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			},
 		})
 		if err != nil {
-			logger.Error("Failed to create Dex OAuth2 Client", zap.Error(err))
+			logger.Error("Failed to create client via Dex API", zap.Error(err))
 
 			r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
-				"Failed", "Failed to create dex oauth2 client")
+				"Failed", "Failed to create client via dex api")
 
 			r.markFailed(ctx, &oauth2Client,
-				fmt.Errorf("failed to create dex oauth2 client: %w", err))
+				fmt.Errorf("failed to create client via dex api: %w", err))
 
 			return ctrl.Result{}, nil
 		}
 	}
 
 	if creating {
-		logger.Info("Saving Dex OAuth2 Client secret")
+		logger.Info("Saving client secret")
 
 		_, err := controllerutil.CreateOrPatch(ctx, r.Client, &clientSecret, func() error {
 			if err := controllerutil.SetControllerReference(&oauth2Client, &clientSecret, r.Scheme); err != nil {
@@ -316,12 +330,13 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return nil
 		})
 		if err != nil {
-			logger.Error("Failed to create Dex OAuth2 Client secret", zap.Error(err))
+			logger.Error("Failed to save client secret", zap.Error(err))
 
 			r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
-				"Failed", "Failed to create dex oauth2 client secret")
+				"Failed", "Failed to save client secret")
 
-			r.markFailed(ctx, &oauth2Client, fmt.Errorf("failed to create dex oauth2 client secret: %w", err))
+			r.markFailed(ctx, &oauth2Client,
+				fmt.Errorf("failed to save client secret: %w", err))
 
 			return ctrl.Result{}, nil
 		}
@@ -388,6 +403,17 @@ func (r *DexOAuth2ClientReconciler) markFailed(ctx context.Context, oauth2Client
 	if updateErr != nil {
 		logger.Error("Failed to mark as failed", zap.Error(updateErr))
 	}
+}
+
+func (r *DexOAuth2ClientReconciler) setOwner(ctx context.Context, oauth2Client *dexv1alpha1.DexOAuth2Client, owner runtime.Object) error {
+	_, err := controllerutil.CreateOrPatch(ctx, r.Client, oauth2Client, func() error {
+		return controllerutil.SetControllerReference(owner.(metav1.Object), oauth2Client, r.Scheme)
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func generateRandomString(length int) string {

@@ -186,7 +186,7 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 
 		require.Len(t, eventRecorder.Events, 1)
 		event := <-eventRecorder.Events
-		assert.Equal(t, "Normal Pending Waiting for dex idp to become ready", event)
+		assert.Equal(t, "Normal Pending Waiting for statefulset to become ready", event)
 
 		updatedIDP := idp.DeepCopy()
 		err = subResourceClient.Get(ctx, idp, updatedIDP)
@@ -357,7 +357,7 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 
 		require.Len(t, eventRecorder.Events, 1)
 		event := <-eventRecorder.Events
-		assert.Equal(t, "Warning Failed Failed to render Dex config: failed to create or update config secret: bang", event)
+		assert.Equal(t, "Warning Failed Failed to render dex config: failed to create or update config secret: bang", event)
 
 		updatedIDP := idp.DeepCopy()
 		err = subResourceClient.Get(ctx, idp, updatedIDP)

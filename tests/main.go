@@ -18,6 +18,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -54,7 +55,7 @@ func main() {
 
 	buildContextPath := filepath.Clean(filepath.Join(pwd, ".."))
 
-	imageName := "ghcr.io/gpu-ninja/dex-operator:latest"
+	imageName := "ghcr.io/gpu-ninja/dex-operator:latest-dev"
 	if err := buildOperatorImage(buildContextPath, "Dockerfile", imageName); err != nil {
 		logger.Fatal(red("Failed to build operator image"), zap.Error(err))
 	}
@@ -86,7 +87,8 @@ func main() {
 		logger.Fatal(red("Failed to install cert-manager"), zap.Error(err))
 	}
 
-	if err := installOperator(filepath.Join(pwd, "../config")); err != nil {
+	overrideYAMLPath := filepath.Join(pwd, "config/dev.yaml")
+	if err := installOperator(overrideYAMLPath, filepath.Join(pwd, "../config")); err != nil {
 		logger.Fatal(red("Failed to install operator"), zap.Error(err))
 	}
 
@@ -173,10 +175,17 @@ func installCertManager(certManagerVersion string) error {
 	return cmd.Run()
 }
 
-func installOperator(configDir string) error {
-	cmd := exec.Command("kapp", "deploy", "-y", "-a", "dex-operator", "-f", configDir)
+func installOperator(overrideYAMLPath, configDir string) error {
+	cmd := exec.Command("ytt", "-f", overrideYAMLPath, "-f", configDir)
+	patchedYAML, err := cmd.CombinedOutput()
+	if err != nil {
+		return err
+	}
+
+	cmd = exec.Command("kapp", "deploy", "-y", "-a", "dex-operator", "-f", "-")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Stdin = bytes.NewReader(patchedYAML)
 
 	return cmd.Run()
 }

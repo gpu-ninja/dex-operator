@@ -29,7 +29,7 @@ test: $(SRCS)
 	go test -coverprofile=coverage.out -v ./...
 
 clean:
-	-rm -rf bin
+	-rm -rf bin bundle
 	go clean -testcache
 
 bundle: $(KBLD) bundle/dex-operator.yaml
