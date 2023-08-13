@@ -22,10 +22,17 @@ not listed here, please open an issue or submit a PR!
 
 ### Prerequisites
 
-* [cert-manager](https://cert-manager.io/docs/installation/)
 * [kapp](https://carvel.dev/kapp/)
 
 ### Installing
+
+#### Cert-Manager
+
+```shell
+kapp deploy -a cert-manager -f https://github.com/cert-manager/cert-manager/releases/download/v1.12.0/cert-manager.yaml
+```
+
+#### Operator
 
 ```shell
 kapp deploy -a dex-operator -f https://github.com/gpu-ninja/dex-operator/releases/latest/download/dex-operator.yaml
