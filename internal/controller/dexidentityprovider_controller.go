@@ -399,12 +399,24 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 			return fmt.Errorf("failed to set controller reference: %w", err)
 		}
 
-		if webService.ObjectMeta.Labels == nil {
-			webService.ObjectMeta.Labels = make(map[string]string)
+		if idp.ObjectMeta.Labels != nil {
+			if webService.ObjectMeta.Labels == nil {
+				webService.ObjectMeta.Labels = make(map[string]string)
+			}
+
+			for k, v := range idp.ObjectMeta.Labels {
+				webService.ObjectMeta.Labels[k] = v
+			}
 		}
 
-		for k, v := range idp.ObjectMeta.Labels {
-			webService.ObjectMeta.Labels[k] = v
+		if idp.Spec.Web.Annotations != nil {
+			if webService.ObjectMeta.Annotations == nil {
+				webService.ObjectMeta.Annotations = make(map[string]string)
+			}
+
+			for k, v := range idp.Spec.Web.Annotations {
+				webService.ObjectMeta.Annotations[k] = v
+			}
 		}
 
 		spec := corev1.ServiceSpec{
@@ -478,12 +490,24 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 			return fmt.Errorf("failed to set controller reference: %w", err)
 		}
 
-		if apiService.ObjectMeta.Labels == nil {
-			apiService.ObjectMeta.Labels = make(map[string]string)
+		if idp.ObjectMeta.Labels != nil {
+			if apiService.ObjectMeta.Labels == nil {
+				apiService.ObjectMeta.Labels = make(map[string]string)
+			}
+
+			for k, v := range idp.ObjectMeta.Labels {
+				apiService.ObjectMeta.Labels[k] = v
+			}
 		}
 
-		for k, v := range idp.ObjectMeta.Labels {
-			apiService.ObjectMeta.Labels[k] = v
+		if idp.Spec.Web.Annotations != nil {
+			if webService.ObjectMeta.Annotations == nil {
+				webService.ObjectMeta.Annotations = make(map[string]string)
+			}
+
+			for k, v := range idp.Spec.Web.Annotations {
+				webService.ObjectMeta.Annotations[k] = v
+			}
 		}
 
 		spec := corev1.ServiceSpec{

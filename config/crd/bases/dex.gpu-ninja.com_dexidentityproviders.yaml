@@ -431,6 +431,12 @@ spec:
                   addr:
                     description: Addr is the address to bind the gRPC server to.
                     type: string
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: Annotations is an optional map of additional annotations
+                      to add to the gRPC server's service.
+                    type: object
                   certificateSecretRef:
                     description: CertificateSecretRef is an optional reference to
                       a secret containing the TLS certificate and key to use for the
@@ -641,6 +647,12 @@ spec:
                     items:
                       type: string
                     type: array
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: Annotations is an optional map of additional annotations
+                      to add to the web server's service.
+                    type: object
                   certificateSecretRef:
                     description: CertificateSecretRef is an optional reference to
                       a secret containing the TLS certificate and key to use for HTTPS.

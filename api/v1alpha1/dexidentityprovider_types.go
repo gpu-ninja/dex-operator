@@ -79,6 +79,8 @@ type DexIdentityProviderWebSpec struct {
 	CertificateSecretRef *reference.LocalSecretReference `json:"certificateSecretRef,omitempty"`
 	// AllowedOrigins is a list of allowed origins for CORS requests.
 	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
+	// Annotations is an optional map of additional annotations to add to the web server's service.
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // DexIdentityProviderFrontendSpec holds the server's frontend templates and asset configuration.
@@ -119,6 +121,8 @@ type DexIdentityProviderGRPCSpec struct {
 	ClientCASecretRef *reference.LocalSecretReference `json:"clientCASecretRef,omitempty"`
 	// Reflection enables gRPC server reflection.
 	Reflection bool `json:"reflection,omitempty"`
+	// Annotations is an optional map of additional annotations to add to the gRPC server's service.
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 type DexIdentityProviderLocalStorageSpec struct {
