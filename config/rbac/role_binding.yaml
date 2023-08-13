@@ -7,11 +7,11 @@ metadata:
     app.kubernetes.io/component: rbac
     app.kubernetes.io/created-by: dex-operator
     app.kubernetes.io/part-of: dex-operator
-  name: manager-rolebinding
+  name: dex-manager-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: manager-role
+  name: dex-manager-role
 subjects:
 - kind: ServiceAccount
   name: controller-manager
