@@ -116,7 +116,7 @@ func main() {
 		_, err := clientset.CoreV1().Secrets("default").Get(ctx, "demo-client-secret", metav1.GetOptions{})
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
-				logger.Fatal(red("Failed to get demo-client-secret"), zap.Error(err))
+				return true, err
 			}
 
 			logger.Info("Not yet ready")
