@@ -23,12 +23,12 @@ connectors:
             username: uid
             idAttr: uid
             emailAttr: mail
-            nameAttr: name
+            nameAttr: cn
             preferredUsernameAttr: uid
         groupSearch:
             baseDN: cn=groups,dc=example,dc=com
             filter: (objectClass=group)
-            nameAttr: name
+            nameAttr: cn
             userMatchers:
                 - userAttr: uid
                   groupAttr: member

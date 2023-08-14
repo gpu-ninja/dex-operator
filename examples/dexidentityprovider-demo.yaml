@@ -46,7 +46,7 @@ spec:
         username: uid
         idAttr: uid
         emailAttr: mail
-        nameAttr: name
+        nameAttr: cn
         preferredUsernameAttr: uid
       groupSearch:
         baseDN: ou=groups,dc=example,dc=com

@@ -82,7 +82,7 @@ func TestConfigFromCR(t *testing.T) {
 							Username:              "uid",
 							IDAttr:                "uid",
 							EmailAttr:             "mail",
-							NameAttr:              "name",
+							NameAttr:              "cn",
 							PreferredUsernameAttr: "uid",
 						},
 						GroupSearch: dexv1alpha1.DexIdentityProviderConnectorLDAPGroupSearchSpec{
@@ -94,7 +94,7 @@ func TestConfigFromCR(t *testing.T) {
 									GroupAttr: "member",
 								},
 							},
-							NameAttr: "name",
+							NameAttr: "cn",
 						},
 					},
 				},
