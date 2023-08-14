@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"sort"
 	"strconv"
 
 	"dario.cat/mergo"
@@ -695,87 +696,98 @@ func (r *DexIdentityProviderReconciler) markFailed(ctx context.Context, idp *dex
 }
 
 func (r *DexIdentityProviderReconciler) getDexCertificateVolumes(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) ([]corev1.Volume, []corev1.VolumeMount, error) {
-	var volumeMap = map[string]corev1.Volume{}
-	var volumeMounts []corev1.VolumeMount
+	type referencedSecret struct {
+		secretName string
+		caOnly     bool
+	}
+	referencedSecrets := map[string]*referencedSecret{}
 
-	addSecretVolume := func(name, secretName, mountPath string, caOnly bool) {
-		if _, exists := volumeMap[secretName]; !exists {
-			volumeMap[secretName] = corev1.Volume{
-				Name: name,
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: secretName,
-					},
-				},
+	addReferencedSecret := func(secretName string, caOnly bool) {
+		if existing, ok := referencedSecrets[secretName]; ok {
+			if existing.caOnly && !caOnly {
+				existing.caOnly = false
 			}
-
-			volumeMount := corev1.VolumeMount{
-				Name:      name,
-				MountPath: mountPath,
-				ReadOnly:  true,
+		} else {
+			referencedSecrets[secretName] = &referencedSecret{
+				secretName: secretName,
+				caOnly:     caOnly,
 			}
-
-			if caOnly {
-				volumeMount.MountPath = filepath.Join(mountPath, "ca.crt")
-				volumeMount.SubPath = "ca.crt"
-			}
-
-			volumeMounts = append(volumeMounts, volumeMount)
 		}
 	}
 
 	if idp.Spec.Web.CertificateSecretRef != nil {
-		addSecretVolume("web-cert", idp.Spec.Web.CertificateSecretRef.Name,
-			filepath.Join(dex.CertsBase, idp.Spec.Web.CertificateSecretRef.Name), false)
+		addReferencedSecret(idp.Spec.Web.CertificateSecretRef.Name, false)
 	}
 
 	if idp.Spec.GRPC.CertificateSecretRef != nil {
-		addSecretVolume("grpc-cert", idp.Spec.GRPC.CertificateSecretRef.Name,
-			filepath.Join(dex.CertsBase, idp.Spec.GRPC.CertificateSecretRef.Name), false)
+		addReferencedSecret(idp.Spec.GRPC.CertificateSecretRef.Name, false)
 	}
 
 	if idp.Spec.GRPC.ClientCASecretRef != nil {
-		addSecretVolume("grpc-client-ca", idp.Spec.GRPC.ClientCASecretRef.Name,
-			filepath.Join(dex.CertsBase, idp.Spec.GRPC.ClientCASecretRef.Name), true)
+		addReferencedSecret(idp.Spec.GRPC.ClientCASecretRef.Name, true)
 	}
 
 	if idp.Spec.Storage.Type == dexv1alpha1.DexIdentityProviderStorageTypePostgres &&
 		idp.Spec.Storage.Postgres != nil &&
 		idp.Spec.Storage.Postgres.SSL != nil {
 		if idp.Spec.Storage.Postgres.SSL.CASecretRef != nil {
-			addSecretVolume("postgres-ca", idp.Spec.Storage.Postgres.SSL.CASecretRef.Name,
-				filepath.Join(dex.CertsBase, idp.Spec.Storage.Postgres.SSL.CASecretRef.Name), true)
+			addReferencedSecret(idp.Spec.Storage.Postgres.SSL.CASecretRef.Name, true)
 		}
 
 		if idp.Spec.Storage.Postgres.SSL.ClientCertificateSecretRef != nil {
-			addSecretVolume("postgres-client-cert", idp.Spec.Storage.Postgres.SSL.ClientCertificateSecretRef.Name,
-				filepath.Join(dex.CertsBase, idp.Spec.Storage.Postgres.SSL.ClientCertificateSecretRef.Name), false)
+			addReferencedSecret(idp.Spec.Storage.Postgres.SSL.ClientCertificateSecretRef.Name, false)
 		}
 	}
 
 	for _, connector := range idp.Spec.Connectors {
 		if connector.Type == dexv1alpha1.DexIdentityProviderConnectorTypeLDAP && connector.LDAP != nil {
 			if connector.LDAP.CASecretRef != nil {
-				addSecretVolume("ldap-ca", connector.LDAP.CASecretRef.Name,
-					filepath.Join(dex.CertsBase, connector.LDAP.CASecretRef.Name), true)
+				addReferencedSecret(connector.LDAP.CASecretRef.Name, true)
 			}
 
 			if connector.LDAP.ClientCertificateSecretRef != nil {
-				addSecretVolume("ldap-client-cert", connector.LDAP.ClientCertificateSecretRef.Name,
-					filepath.Join(dex.CertsBase, connector.LDAP.ClientCertificateSecretRef.Name), false)
+				addReferencedSecret(connector.LDAP.ClientCertificateSecretRef.Name, false)
 			}
 		} else if connector.Type == dexv1alpha1.DexIdentityProviderConnectorTypeOIDC && connector.OIDC != nil {
 			if connector.OIDC.CASecretRef != nil {
-				addSecretVolume("oidc-ca", connector.OIDC.CASecretRef.Name,
-					filepath.Join(dex.CertsBase, connector.OIDC.CASecretRef.Name), true)
+				addReferencedSecret(connector.OIDC.CASecretRef.Name, true)
 			}
 		}
 	}
 
 	var volumes []corev1.Volume
-	for _, volume := range volumeMap {
-		volumes = append(volumes, volume)
+	var volumeMounts []corev1.VolumeMount
+
+	for _, referencedSecret := range referencedSecrets {
+		volumes = append(volumes, corev1.Volume{
+			Name: referencedSecret.secretName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: referencedSecret.secretName,
+				},
+			},
+		})
+
+		volumeMount := corev1.VolumeMount{
+			Name:      referencedSecret.secretName,
+			MountPath: filepath.Join(dex.CertsBase, referencedSecret.secretName),
+			ReadOnly:  true,
+		}
+		if referencedSecret.caOnly {
+			volumeMount.MountPath = filepath.Join(volumeMount.MountPath, "ca.crt")
+			volumeMount.SubPath = "ca.crt"
+		}
+
+		volumeMounts = append(volumeMounts, volumeMount)
 	}
+
+	sort.Slice(volumes, func(i, j int) bool {
+		return volumes[i].Name < volumes[j].Name
+	})
+
+	sort.Slice(volumeMounts, func(i, j int) bool {
+		return volumeMounts[i].Name < volumeMounts[j].Name
+	})
 
 	return volumes, volumeMounts, nil
 }
