@@ -34,8 +34,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/dexidp/dex/api/v2"
+	dexapi "github.com/dexidp/dex/api/v2"
 	"github.com/google/uuid"
+	"github.com/gpu-ninja/dex-operator/api"
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
 	"github.com/gpu-ninja/dex-operator/internal/constants"
 	"github.com/gpu-ninja/dex-operator/internal/dex"
@@ -194,7 +195,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				logger.Error("Failed to build api client, skipping deletion", zap.Error(err))
 			} else {
 				oauth2ClientID := clientSecret.Data["id"]
-				_, err := dexAPIClient.DeleteClient(ctx, &api.DeleteClientReq{
+				_, err := dexAPIClient.DeleteClient(ctx, &dexapi.DeleteClientReq{
 					Id: string(oauth2ClientID),
 				})
 				if err != nil {
@@ -267,7 +268,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// TODO: use GetClient() when it is released.
 
-	updateResp, err := dexAPIClient.UpdateClient(ctx, &api.UpdateClientReq{
+	updateResp, err := dexAPIClient.UpdateClient(ctx, &dexapi.UpdateClientReq{
 		Id:           oauth2ClientID,
 		RedirectUris: oauth2Client.Spec.RedirectURIs,
 		TrustedPeers: oauth2Client.Spec.TrustedPeers,
@@ -290,8 +291,8 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if updateResp.NotFound {
 		logger.Info("Client not found, creating")
 
-		_, err = dexAPIClient.CreateClient(ctx, &api.CreateClientReq{
-			Client: &api.Client{
+		_, err = dexAPIClient.CreateClient(ctx, &dexapi.CreateClientReq{
+			Client: &dexapi.Client{
 				Id:           oauth2ClientID,
 				Secret:       oauth2ClientSecret,
 				RedirectUris: oauth2Client.Spec.RedirectURIs,
@@ -405,15 +406,30 @@ func (r *DexOAuth2ClientReconciler) markFailed(ctx context.Context, oauth2Client
 	}
 }
 
-func (r *DexOAuth2ClientReconciler) setOwner(ctx context.Context, oauth2Client *dexv1alpha1.DexOAuth2Client, owner runtime.Object) error {
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, oauth2Client, func() error {
-		return controllerutil.SetControllerReference(owner.(metav1.Object), oauth2Client, r.Scheme)
-	})
-	if err != nil {
-		return err
-	}
+func (r *DexOAuth2ClientReconciler) setOwner(ctx context.Context, oauth2Client *dexv1alpha1.DexOAuth2Client, idp *dexv1alpha1.DexIdentityProvider) error {
+	// Native owner references don't work across namespaces and it's very often
+	// that the client and identity provider are in different namespaces. So we have
+	// our own little owner reference implementation.
+	_, err := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
+		var alreadyOwned bool
+		for _, ref := range idp.Status.ClientRefs {
+			if ref.Namespace == oauth2Client.Namespace && ref.Name == oauth2Client.Name {
+				alreadyOwned = true
+				break
+			}
+		}
 
-	return nil
+		if !alreadyOwned {
+			idp.Status.ClientRefs = append(idp.Status.ClientRefs, api.DexOAuth2ClientReference{
+				Name:      oauth2Client.Name,
+				Namespace: oauth2Client.Namespace,
+			})
+		}
+
+		return nil
+	})
+
+	return err
 }
 
 func generateRandomString(length int) string {

@@ -42,3 +42,21 @@ func (ref *DexIdentityProviderReference) Resolve(ctx context.Context, reader cli
 
 	return objRef.Resolve(ctx, reader, scheme, parent)
 }
+
+// +kubebuilder:object:generate=true
+type DexOAuth2ClientReference struct {
+	// Name of the referenced DexOAuth2Client.
+	Name string `json:"name"`
+	// Namespace is the optional namespace of the referenced DexOAuth2Client.
+	Namespace string `json:"namespace,omitempty"`
+}
+
+func (ref *DexOAuth2ClientReference) Resolve(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, parent runtime.Object) (runtime.Object, error) {
+	objRef := &reference.ObjectReference{
+		Name:      ref.Name,
+		Namespace: ref.Namespace,
+		Kind:      "DexOAuth2Client",
+	}
+
+	return objRef.Resolve(ctx, reader, scheme, parent)
+}

@@ -23,6 +23,7 @@
 package v1alpha1
 
 import (
+	"github.com/gpu-ninja/dex-operator/api"
 	"github.com/gpu-ninja/operator-utils/reference"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -492,6 +493,11 @@ func (in *DexIdentityProviderStatus) DeepCopyInto(out *DexIdentityProviderStatus
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
+	}
+	if in.ClientRefs != nil {
+		in, out := &in.ClientRefs, &out.ClientRefs
+		*out = make([]api.DexOAuth2ClientReference, len(*in))
+		copy(*out, *in)
 	}
 }
 

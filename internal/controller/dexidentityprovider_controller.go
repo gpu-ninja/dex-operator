@@ -101,6 +101,20 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 	if !idp.GetDeletionTimestamp().IsZero() {
 		logger.Info("Deleting")
 
+		for _, ref := range idp.Status.ClientRefs {
+			referencedClient := dexv1alpha1.DexOAuth2Client{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      ref.Name,
+					Namespace: ref.Namespace,
+				},
+			}
+
+			if err := r.Client.Delete(ctx, &referencedClient); err != nil && !errors.IsNotFound(err) {
+				// Don't block deletion.
+				logger.Error("Failed to cleanup referenced client, skipping deletion", zap.Error(err))
+			}
+		}
+
 		if controllerutil.ContainsFinalizer(&idp, constants.FinalizerName) {
 			logger.Info("Removing Finalizer")
 

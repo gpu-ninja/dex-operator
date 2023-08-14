@@ -688,6 +688,21 @@ spec:
             description: DexIdentityProviderStatus defines the observed state of the
               Dex idP server.
             properties:
+              clientRefs:
+                description: ClientRefs is a list of clients that are using this DexIdentityProvider.
+                items:
+                  properties:
+                    name:
+                      description: Name of the referenced DexOAuth2Client.
+                      type: string
+                    namespace:
+                      description: Namespace is the optional namespace of the referenced
+                        DexOAuth2Client.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
               conditions:
                 description: Conditions represents the latest available observations
                   of an DexIdentityProvider's current state.

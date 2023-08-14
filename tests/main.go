@@ -30,7 +30,9 @@ import (
 	"go.uber.org/zap"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -130,7 +132,45 @@ func main() {
 		logger.Fatal(red("Failed to wait for demo-client-secret"), zap.Error(err))
 	}
 
-	logger.Info(green("Client secret successfully created"))
+	logger.Info("Client secret created successfully")
+
+	logger.Info("Deleting dex identity provider (to test cleanup)")
+
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		logger.Fatal(red("Failed to create dynamic client"), zap.Error(err))
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    "dex.gpu-ninja.com",
+		Version:  "v1alpha1",
+		Resource: "dexidentityproviders",
+	}
+
+	err = dynamicClient.Resource(gvr).Namespace("default").Delete(ctx, "demo", metav1.DeleteOptions{})
+	if err != nil {
+		logger.Fatal(red("Failed to delete dex identity provider"), zap.Error(err))
+	}
+
+	logger.Info("Waiting for demo-client-secret to be deleted")
+
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		_, err := clientset.CoreV1().Secrets("default").Get(ctx, "demo-client-secret", metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		} else if err != nil {
+			return true, err
+		}
+
+		logger.Info("Not yet deleted")
+
+		return false, nil
+	})
+	if err != nil {
+		logger.Fatal(red("Failed to wait for demo-client-secret to be deleted"), zap.Error(err))
+	}
+
+	logger.Info(green("Client secret successfully created and deleted"))
 }
 
 func buildOperatorImage(buildContextPath, relDockerfilePath, image string) error {

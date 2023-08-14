@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gpu-ninja/dex-operator/api"
 	"github.com/gpu-ninja/operator-utils/reference"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -197,6 +198,8 @@ type DexIdentityProviderStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 	// Conditions represents the latest available observations of an DexIdentityProvider's current state.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// ClientRefs is a list of clients that are using this DexIdentityProvider.
+	ClientRefs []api.DexOAuth2ClientReference `json:"clientRefs,omitempty"`
 }
 
 // DexIdentityProvider is a Dex IdP server.
