@@ -71,8 +71,9 @@ func TestConfigFromCR(t *testing.T) {
 						CASecretRef: &reference.LocalSecretReference{
 							Name: "ldap-ca",
 						},
-						BindCredentialsSecretRef: reference.LocalSecretReference{
-							Name: "ldap-bind-credentials",
+						BindUsername: "cn=admin,dc=example,dc=com",
+						BindPasswordSecretRef: reference.LocalSecretReference{
+							Name: "ldap-bind-password",
 						},
 						UsernamePrompt: "SSO Username",
 						UserSearch: dexv1alpha1.DexIdentityProviderConnectorLDAPUserSearchSpec{
@@ -114,18 +115,17 @@ func TestConfigFromCR(t *testing.T) {
 		},
 	}
 
-	ldapBindCredentials := &corev1.Secret{
+	ldapBindPassword := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ldap-bind-credentials",
+			Name:      "ldap-bind-password",
 			Namespace: "default",
 		},
 		Data: map[string][]byte{
-			"username": []byte("cn=admin,dc=example,dc=com"),
 			"password": []byte("password"),
 		},
 	}
 
-	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(idp, ldapCA, ldapBindCredentials).Build()
+	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(idp, ldapCA, ldapBindPassword).Build()
 
 	ctx := context.Background()
 

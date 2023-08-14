@@ -268,7 +268,7 @@ func (d *DexIdentityProvider) ResolveReferences(ctx context.Context, reader clie
 
 	for _, connector := range d.Spec.Connectors {
 		if connector.Type == DexIdentityProviderConnectorTypeLDAP && connector.LDAP != nil {
-			if _, err := connector.LDAP.BindCredentialsSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
+			if _, err := connector.LDAP.BindPasswordSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
 				return err
 			}
 

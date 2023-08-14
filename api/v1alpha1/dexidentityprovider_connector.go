@@ -108,9 +108,12 @@ type DexIdentityProviderConnectorLDAPSpec struct {
 	CASecretRef *reference.LocalSecretReference `json:"caSecretRef,omitempty"`
 	// ClientCertificateSecretRef is an optional reference to a secret containing the client certificate and key.
 	ClientCertificateSecretRef *reference.LocalSecretReference `json:"clientCertificateSecretRef,omitempty"`
-	// BindCredentialsSecretRef is a reference to a secret containing the bind credentials.
+	// BindUsername is the DN of the user to bind with.
 	// The connector uses these credentials to search for users and groups.
-	BindCredentialsSecretRef reference.LocalSecretReference `json:"bindCredentialsSecretRef"`
+	BindUsername string `json:"bindUsername"`
+	// BindPasswordSecretRef is a reference to a secret containing the bind password.
+	// The connector uses these credentials to search for users and groups.
+	BindPasswordSecretRef reference.LocalSecretReference `json:"bindPasswordSecretRef"`
 	// UsernamePrompt allows users to override the username attribute (displayed
 	// in the username/password prompt). If unset, the handler will use
 	// "Username".

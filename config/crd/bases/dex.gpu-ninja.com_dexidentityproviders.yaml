@@ -67,10 +67,10 @@ spec:
                     ldap:
                       description: LDAP holds configuration for the LDAP connector.
                       properties:
-                        bindCredentialsSecretRef:
-                          description: BindCredentialsSecretRef is a reference to
-                            a secret containing the bind credentials. The connector
-                            uses these credentials to search for users and groups.
+                        bindPasswordSecretRef:
+                          description: BindPasswordSecretRef is a reference to a secret
+                            containing the bind password. The connector uses these
+                            credentials to search for users and groups.
                           properties:
                             name:
                               description: Name is the name of the secret.
@@ -78,6 +78,11 @@ spec:
                           required:
                           - name
                           type: object
+                        bindUsername:
+                          description: BindUsername is the DN of the user to bind
+                            with. The connector uses these credentials to search for
+                            users and groups.
+                          type: string
                         caSecretRef:
                           description: CASecretRef is an optional reference to a secret
                             containing the CA certificate.
@@ -228,7 +233,8 @@ spec:
                             prompt). If unset, the handler will use "Username".
                           type: string
                       required:
-                      - bindCredentialsSecretRef
+                      - bindPasswordSecretRef
+                      - bindUsername
                       - groupSearch
                       - host
                       - userSearch

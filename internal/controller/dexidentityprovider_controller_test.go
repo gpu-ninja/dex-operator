@@ -89,8 +89,9 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 						CASecretRef: &reference.LocalSecretReference{
 							Name: "ldap-ca",
 						},
-						BindCredentialsSecretRef: reference.LocalSecretReference{
-							Name: "ldap-bind-credentials",
+						BindUsername: "cn=admin,dc=example,dc=com",
+						BindPasswordSecretRef: reference.LocalSecretReference{
+							Name: "ldap-bind-password",
 						},
 						UsernamePrompt: "SSO Username",
 						UserSearch: dexv1alpha1.DexIdentityProviderConnectorLDAPUserSearchSpec{
@@ -137,13 +138,12 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 		},
 	}
 
-	ldapBindCredentials := &corev1.Secret{
+	ldapBindPassword := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ldap-bind-credentials",
+			Name:      "ldap-bind-password",
 			Namespace: "default",
 		},
 		Data: map[string][]byte{
-			"username": []byte("cn=admin,dc=example,dc=com"),
 			"password": []byte("password"),
 		},
 	}
@@ -170,7 +170,7 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 
 		r.Client = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(idp, ldapCA, ldapBindCredentials).
+			WithObjects(idp, ldapCA, ldapBindPassword).
 			WithStatusSubresource(idp).
 			WithInterceptorFuncs(interceptorFuncs).
 			Build()
@@ -238,7 +238,7 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 
 		r.Client = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(updatedIDP, ldapCA, ldapBindCredentials, &sts).
+			WithObjects(updatedIDP, ldapCA, ldapBindPassword, &sts).
 			WithStatusSubresource(updatedIDP, &sts).
 			WithInterceptorFuncs(interceptorFuncs).
 			Build()
@@ -274,7 +274,7 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 
 		r.Client = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(deletingIDP, ldapCA, ldapBindCredentials).
+			WithObjects(deletingIDP, ldapCA, ldapBindPassword).
 			WithStatusSubresource(deletingIDP).
 			Build()
 
@@ -341,7 +341,7 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 
 		r.Client = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(idp, ldapCA, ldapBindCredentials).
+			WithObjects(idp, ldapCA, ldapBindPassword).
 			WithStatusSubresource(idp).
 			WithInterceptorFuncs(failOnSecrets).
 			Build()

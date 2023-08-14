@@ -103,7 +103,7 @@ func (in *DexIdentityProviderConnectorLDAPSpec) DeepCopyInto(out *DexIdentityPro
 		*out = new(reference.LocalSecretReference)
 		**out = **in
 	}
-	out.BindCredentialsSecretRef = in.BindCredentialsSecretRef
+	out.BindPasswordSecretRef = in.BindPasswordSecretRef
 	out.UserSearch = in.UserSearch
 	in.GroupSearch.DeepCopyInto(&out.GroupSearch)
 }

@@ -211,7 +211,7 @@ func postgresStorageFromCR(ctx context.Context, reader client.Reader, scheme *ru
 }
 
 func ldapConnectorFromCR(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, idp *dexv1alpha1.DexIdentityProvider, connector dexv1alpha1.DexIdentityProviderConnectorSpec) (*Connector, error) {
-	bindCredentialsSecret, err := connector.LDAP.BindCredentialsSecretRef.Resolve(ctx, reader, scheme, idp)
+	bindPasswordSecret, err := connector.LDAP.BindPasswordSecretRef.Resolve(ctx, reader, scheme, idp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve bind credentials secret: %w", err)
 	}
@@ -249,8 +249,8 @@ func ldapConnectorFromCR(ctx context.Context, reader client.Reader, scheme *runt
 				RootCA:             caFile,
 				ClientCert:         clientCertFile,
 				ClientKey:          clientKeyFile,
-				BindDN:             string(bindCredentialsSecret.(*corev1.Secret).Data["username"]),
-				BindPW:             string(bindCredentialsSecret.(*corev1.Secret).Data["password"]),
+				BindDN:             connector.LDAP.BindUsername,
+				BindPW:             string(bindPasswordSecret.(*corev1.Secret).Data["password"]),
 				UsernamePrompt:     connector.LDAP.UsernamePrompt,
 				UserSearch: LDAPConnectorUserSearch{
 					BaseDN:                    connector.LDAP.UserSearch.BaseDN,

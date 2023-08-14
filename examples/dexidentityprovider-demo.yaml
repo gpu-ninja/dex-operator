@@ -37,8 +37,9 @@ spec:
       host: ldap.example.com:636
       caSecretRef:
         name: ca-tls
-      bindCredentialsSecretRef:
-        name: ldap-bind-credentials
+      bindUsername: cn=admin,dc=example,dc=com
+      bindPasswordSecretRef:
+        name: ldap-bind-password
       userSearch:
         baseDN: ou=users,dc=example,dc=com
         filter: (objectClass=person)
