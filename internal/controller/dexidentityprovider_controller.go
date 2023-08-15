@@ -595,6 +595,72 @@ func (r *DexIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Complete(r)
 }
 
+func (r *DexIdentityProviderReconciler) markPending(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) error {
+	_, err := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
+		idp.Status.ObservedGeneration = idp.Generation
+		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhasePending
+
+		meta.SetStatusCondition(&idp.Status.Conditions, metav1.Condition{
+			Type:               string(dexv1alpha1.DexIdentityProviderConditionTypePending),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: idp.Generation,
+			Reason:             "Pending",
+			Message:            "Dex Identity Provider is pending",
+		})
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to mark as pending: %w", err)
+	}
+
+	return nil
+}
+
+func (r *DexIdentityProviderReconciler) markReady(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) error {
+	_, err := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
+		idp.Status.ObservedGeneration = idp.Generation
+		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhaseReady
+
+		meta.SetStatusCondition(&idp.Status.Conditions, metav1.Condition{
+			Type:               string(dexv1alpha1.DexIdentityProviderConditionTypeReady),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: idp.Generation,
+			Reason:             "Ready",
+			Message:            "Dex Identity Provider is ready",
+		})
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to mark as ready: %w", err)
+	}
+
+	return nil
+}
+
+func (r *DexIdentityProviderReconciler) markFailed(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider, err error) {
+	logger := zaplogr.FromContext(ctx)
+
+	_, updateErr := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
+		idp.Status.ObservedGeneration = idp.Generation
+		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhaseFailed
+
+		meta.SetStatusCondition(&idp.Status.Conditions, metav1.Condition{
+			Type:               string(dexv1alpha1.DexIdentityProviderConditionTypeFailed),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: idp.Generation,
+			Reason:             "Failed",
+			Message:            err.Error(),
+		})
+
+		return nil
+	})
+	if updateErr != nil {
+		logger.Error("Failed to mark as failed", zap.Error(updateErr))
+	}
+}
+
 func (r *DexIdentityProviderReconciler) saveDexConfig(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) (string, error) {
 	config, err := dex.ConfigFromCR(ctx, r.Client, r.Scheme, idp)
 	if err != nil {
@@ -632,81 +698,6 @@ func (r *DexIdentityProviderReconciler) saveDexConfig(ctx context.Context, idp *
 	}
 
 	return configSecret.Name, nil
-}
-
-func (r *DexIdentityProviderReconciler) markPending(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) error {
-	updatedConditions := make([]metav1.Condition, len(idp.Status.Conditions))
-	copy(updatedConditions, idp.Status.Conditions)
-
-	meta.SetStatusCondition(&updatedConditions, metav1.Condition{
-		Type:    string(dexv1alpha1.DexIdentityProviderConditionTypePending),
-		Status:  metav1.ConditionTrue,
-		Reason:  "Pending",
-		Message: "Dex Identity Provider is pending",
-	})
-
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
-		idp.Status.ObservedGeneration = idp.Generation
-		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhasePending
-		idp.Status.Conditions = updatedConditions
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to mark as pending: %w", err)
-	}
-
-	return nil
-}
-
-func (r *DexIdentityProviderReconciler) markReady(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) error {
-	updatedConditions := make([]metav1.Condition, len(idp.Status.Conditions))
-	copy(updatedConditions, idp.Status.Conditions)
-
-	meta.SetStatusCondition(&updatedConditions, metav1.Condition{
-		Type:    string(dexv1alpha1.DexIdentityProviderConditionTypeReady),
-		Status:  metav1.ConditionTrue,
-		Reason:  "Ready",
-		Message: "Dex Identity Provider is ready",
-	})
-
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
-		idp.Status.ObservedGeneration = idp.Generation
-		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhaseReady
-		idp.Status.Conditions = updatedConditions
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to mark as ready: %w", err)
-	}
-
-	return nil
-}
-
-func (r *DexIdentityProviderReconciler) markFailed(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider, err error) {
-	logger := zaplogr.FromContext(ctx)
-
-	updatedConditions := make([]metav1.Condition, len(idp.Status.Conditions))
-	copy(updatedConditions, idp.Status.Conditions)
-
-	meta.SetStatusCondition(&updatedConditions, metav1.Condition{
-		Type:    string(dexv1alpha1.DexIdentityProviderConditionTypeFailed),
-		Status:  metav1.ConditionTrue,
-		Reason:  "Failed",
-		Message: err.Error(),
-	})
-
-	_, updateErr := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
-		idp.Status.ObservedGeneration = idp.Generation
-		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhaseFailed
-		idp.Status.Conditions = updatedConditions
-
-		return nil
-	})
-	if updateErr != nil {
-		logger.Error("Failed to mark as failed", zap.Error(updateErr))
-	}
 }
 
 func (r *DexIdentityProviderReconciler) getDexCertificateVolumes(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) ([]corev1.Volume, []corev1.VolumeMount, error) {
