@@ -8,7 +8,7 @@ replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20230525220651-2546d82
 require (
 	github.com/dexidp/dex/api/v2 v2.1.0
 	github.com/google/uuid v1.3.0
-	github.com/gpu-ninja/operator-utils v0.4.2
+	github.com/gpu-ninja/operator-utils v0.4.3
 	github.com/jsternberg/zap-logfmt v1.3.0
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/zap v1.25.0
