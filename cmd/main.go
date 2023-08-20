@@ -107,9 +107,9 @@ func main() {
 	}
 
 	if err = (&controller.DexIdentityProviderReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		EventRecorder: mgr.GetEventRecorderFor("dexidentityprovider-controller"),
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("dexidentityprovider-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DexIdentityProvider")
 		os.Exit(1)
@@ -122,7 +122,7 @@ func main() {
 	if err = (&controller.DexOAuth2ClientReconciler{
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
-		EventRecorder:    mgr.GetEventRecorderFor("dexoauth2client-controller"),
+		Recorder:         mgr.GetEventRecorderFor("dexoauth2client-controller"),
 		DexClientBuilder: dexClientBuilder,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DexOAuth2Client")

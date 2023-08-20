@@ -38,9 +38,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gpu-ninja/dex-operator/api"
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
-	"github.com/gpu-ninja/dex-operator/internal/constants"
 	"github.com/gpu-ninja/dex-operator/internal/dex"
-	"github.com/gpu-ninja/operator-utils/retryable"
+	"github.com/gpu-ninja/operator-utils/updater"
 	"github.com/gpu-ninja/operator-utils/zaplogr"
 )
 
@@ -52,7 +51,7 @@ import (
 type DexOAuth2ClientReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
-	EventRecorder    record.EventRecorder
+	Recorder         record.EventRecorder
 	DexClientBuilder dex.ClientBuilder
 }
 
@@ -71,11 +70,11 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	if !controllerutil.ContainsFinalizer(&oauth2Client, constants.FinalizerName) {
+	if !controllerutil.ContainsFinalizer(&oauth2Client, FinalizerName) {
 		logger.Info("Adding Finalizer")
 
 		_, err := controllerutil.CreateOrPatch(ctx, r.Client, &oauth2Client, func() error {
-			controllerutil.AddFinalizer(&oauth2Client, constants.FinalizerName)
+			controllerutil.AddFinalizer(&oauth2Client, FinalizerName)
 
 			return nil
 		})
@@ -84,59 +83,58 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Make sure all references are resolvable.
-	if err := oauth2Client.ResolveReferences(ctx, r.Client, r.Scheme); err != nil {
-		if retryable.IsRetryable(err) {
-			if !oauth2Client.GetDeletionTimestamp().IsZero() {
-				// Parent has probably been removed by a cascading delete.
-				// So there is probably no point in retrying.
+	ok, err := oauth2Client.ResolveReferences(ctx, r.Client, r.Scheme)
+	if !ok && err == nil {
+		if !oauth2Client.GetDeletionTimestamp().IsZero() {
+			// Parent has probably been removed by a cascading delete.
+			// So there is probably no point in retrying.
 
-				_, err := controllerutil.CreateOrPatch(ctx, r.Client, &oauth2Client, func() error {
-					controllerutil.RemoveFinalizer(&oauth2Client, constants.FinalizerName)
+			_, err := controllerutil.CreateOrPatch(ctx, r.Client, &oauth2Client, func() error {
+				controllerutil.RemoveFinalizer(&oauth2Client, FinalizerName)
 
-					return nil
-				})
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
-				}
-
-				return ctrl.Result{}, nil
+				return nil
+			})
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer: %w", err)
 			}
 
-			logger.Info("Not all references are resolvable, requeuing")
-
-			r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
-				"NotReady", "Not all references are resolvable")
-
-			if err := r.markPending(ctx, &oauth2Client); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{RequeueAfter: constants.ReconcileRetryInterval}, nil
+			return ctrl.Result{}, nil
 		}
 
-		logger.Error("Failed to resolve references", zap.Error(err))
+		logger.Info("Not all references are resolvable, requeuing")
 
-		r.EventRecorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
+		r.Recorder.Event(&oauth2Client, corev1.EventTypeWarning,
+			"NotReady", "Not all references are resolvable")
+
+		if err := r.markPending(ctx, &oauth2Client); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
+	} else if err != nil {
+		r.Recorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
 			"Failed", "Failed to resolve references: %s", err)
 
 		r.markFailed(ctx, &oauth2Client,
 			fmt.Errorf("failed to resolve references: %w", err))
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, fmt.Errorf("failed to resolve references: %w", err)
 	}
 
-	idpObj, err := oauth2Client.Spec.IdentityProviderRef.Resolve(ctx, r.Client, r.Scheme, &oauth2Client)
+	idpObj, ok, err := oauth2Client.Spec.IdentityProviderRef.Resolve(ctx, r.Client, r.Scheme, &oauth2Client)
 	if err != nil {
 		logger.Error("Failed to resolve Identity Provider reference", zap.Error(err))
 
-		r.EventRecorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
+		r.Recorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
 			"Failed", "Failed to resolve identity provider reference: %s", err)
 
 		r.markFailed(ctx, &oauth2Client,
 			fmt.Errorf("failed to resolve identity provider reference: %w", err))
 
 		return ctrl.Result{}, nil
+	}
+	if !ok {
+		return ctrl.Result{}, fmt.Errorf("failed to resolve identity provider reference")
 	}
 	idp := idpObj.(*dexv1alpha1.DexIdentityProvider)
 
@@ -145,14 +143,14 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		logger.Info("Referenced Identity Provider not ready",
 			zap.String("namespace", idp.Namespace), zap.String("name", idp.Name))
 
-		r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
+		r.Recorder.Event(&oauth2Client, corev1.EventTypeWarning,
 			"NotReady", "Referenced identity provider is not ready")
 
 		if err := r.markPending(ctx, &oauth2Client); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{RequeueAfter: constants.ReconcileRetryInterval}, nil
+		return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
 	}
 
 	clientSecretNamespaceName := types.NamespacedName{
@@ -173,7 +171,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		} else {
 			logger.Error("Failed to get client secret", zap.Error(err))
 
-			r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
+			r.Recorder.Event(&oauth2Client, corev1.EventTypeWarning,
 				"Failed", "Failed to get client secret")
 
 			r.markFailed(ctx, &oauth2Client,
@@ -205,11 +203,11 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			}
 		}
 
-		if controllerutil.ContainsFinalizer(&oauth2Client, constants.FinalizerName) {
+		if controllerutil.ContainsFinalizer(&oauth2Client, FinalizerName) {
 			logger.Info("Removing Finalizer")
 
 			_, err := controllerutil.CreateOrPatch(ctx, r.Client, &oauth2Client, func() error {
-				controllerutil.RemoveFinalizer(&oauth2Client, constants.FinalizerName)
+				controllerutil.RemoveFinalizer(&oauth2Client, FinalizerName)
 
 				return nil
 			})
@@ -221,18 +219,12 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, nil
 	}
 
-	if oauth2Client.Status.Phase == dexv1alpha1.DexOAuth2ClientPhaseFailed {
-		logger.Info("In failed state, ignoring")
-
-		return ctrl.Result{}, nil
-	}
-
 	logger.Info("Creating or updating")
 
 	if err := r.setOwner(ctx, &oauth2Client, idp); err != nil {
 		logger.Error("Failed to set owner reference", zap.Error(err))
 
-		r.EventRecorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
+		r.Recorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
 			"Failed", "Failed to set owner reference: %s", err)
 
 		r.markFailed(ctx, &oauth2Client,
@@ -247,7 +239,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		logger.Error("Failed to build api client", zap.Error(err))
 
-		r.EventRecorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
+		r.Recorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
 			"Failed", "Failed to build api client: %s", err)
 
 		if err := r.markPending(ctx, &oauth2Client); err != nil {
@@ -278,7 +270,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if err != nil {
 		logger.Error("Failed to update client via Dex API", zap.Error(err))
 
-		r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
+		r.Recorder.Event(&oauth2Client, corev1.EventTypeWarning,
 			"Failed", "Failed to update client via dex api")
 
 		if err := r.markPending(ctx, &oauth2Client); err != nil {
@@ -305,7 +297,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if err != nil {
 			logger.Error("Failed to create client via Dex API", zap.Error(err))
 
-			r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
+			r.Recorder.Event(&oauth2Client, corev1.EventTypeWarning,
 				"Failed", "Failed to create client via dex api")
 
 			r.markFailed(ctx, &oauth2Client,
@@ -333,7 +325,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if err != nil {
 			logger.Error("Failed to save client secret", zap.Error(err))
 
-			r.EventRecorder.Event(&oauth2Client, corev1.EventTypeWarning,
+			r.Recorder.Event(&oauth2Client, corev1.EventTypeWarning,
 				"Failed", "Failed to save client secret")
 
 			r.markFailed(ctx, &oauth2Client,
@@ -344,7 +336,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	if oauth2Client.Status.Phase != dexv1alpha1.DexOAuth2ClientPhaseReady {
-		r.EventRecorder.Event(&oauth2Client, corev1.EventTypeNormal,
+		r.Recorder.Event(&oauth2Client, corev1.EventTypeNormal,
 			"Created", "Successfully created")
 
 		if err := r.markReady(ctx, &oauth2Client); err != nil {
@@ -357,15 +349,15 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 func (r *DexOAuth2ClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		Named("dexoauth2client-controller").
 		For(&dexv1alpha1.DexOAuth2Client{}).
 		Owns(&corev1.Secret{}).
 		Complete(r)
 }
 
 func (r *DexOAuth2ClientReconciler) markPending(ctx context.Context, oauth2Client *dexv1alpha1.DexOAuth2Client) error {
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, oauth2Client, func() error {
-		oauth2Client.Status.ObservedGeneration = oauth2Client.Generation
+	key := client.ObjectKeyFromObject(oauth2Client)
+	err := updater.UpdateStatus(ctx, r.Client, key, oauth2Client, func() error {
+		oauth2Client.Status.ObservedGeneration = oauth2Client.ObjectMeta.Generation
 		oauth2Client.Status.Phase = dexv1alpha1.DexOAuth2ClientPhasePending
 
 		return nil
@@ -378,7 +370,8 @@ func (r *DexOAuth2ClientReconciler) markPending(ctx context.Context, oauth2Clien
 }
 
 func (r *DexOAuth2ClientReconciler) markReady(ctx context.Context, oauth2Client *dexv1alpha1.DexOAuth2Client) error {
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, oauth2Client, func() error {
+	key := client.ObjectKeyFromObject(oauth2Client)
+	err := updater.UpdateStatus(ctx, r.Client, key, oauth2Client, func() error {
 		oauth2Client.Status.ObservedGeneration = oauth2Client.Generation
 		oauth2Client.Status.Phase = dexv1alpha1.DexOAuth2ClientPhaseReady
 
@@ -394,7 +387,8 @@ func (r *DexOAuth2ClientReconciler) markReady(ctx context.Context, oauth2Client 
 func (r *DexOAuth2ClientReconciler) markFailed(ctx context.Context, oauth2Client *dexv1alpha1.DexOAuth2Client, err error) {
 	logger := zaplogr.FromContext(ctx)
 
-	_, updateErr := controllerutil.CreateOrPatch(ctx, r.Client, oauth2Client, func() error {
+	key := client.ObjectKeyFromObject(oauth2Client)
+	updateErr := updater.UpdateStatus(ctx, r.Client, key, oauth2Client, func() error {
 		oauth2Client.Status.ObservedGeneration = oauth2Client.Generation
 		oauth2Client.Status.Phase = dexv1alpha1.DexOAuth2ClientPhaseFailed
 		oauth2Client.Status.Reason = err.Error()

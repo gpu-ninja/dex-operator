@@ -79,6 +79,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
+          LICENSE
           bundle/*.yaml
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

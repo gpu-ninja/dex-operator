@@ -92,12 +92,13 @@ type DexOAuth2ClientList struct {
 	Items           []DexOAuth2Client `json:"items"`
 }
 
-func (d *DexOAuth2Client) ResolveReferences(ctx context.Context, reader client.Reader, scheme *runtime.Scheme) error {
-	if _, err := d.Spec.IdentityProviderRef.Resolve(ctx, reader, scheme, d); err != nil {
-		return err
+func (d *DexOAuth2Client) ResolveReferences(ctx context.Context, reader client.Reader, scheme *runtime.Scheme) (bool, error) {
+	_, ok, err := d.Spec.IdentityProviderRef.Resolve(ctx, reader, scheme, d)
+	if !ok || err != nil {
+		return ok, err
 	}
 
-	return nil
+	return true, nil
 }
 
 func init() {

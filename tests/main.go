@@ -215,8 +215,8 @@ func installCertManager(certManagerVersion string) error {
 	return cmd.Run()
 }
 
-func installOperator(overrideYAMLPath, configDir string) error {
-	cmd := exec.Command("ytt", "-f", overrideYAMLPath, "-f", configDir)
+func installOperator(configDir string) error {
+	cmd := exec.Command("ytt", "-f", "config", "-f", configDir)
 	patchedYAML, err := cmd.CombinedOutput()
 	if err != nil {
 		return err

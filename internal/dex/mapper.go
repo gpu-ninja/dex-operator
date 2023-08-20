@@ -165,8 +165,8 @@ func sqlite3StorageFromCR(storage dexv1alpha1.DexIdentityProviderStorageSpec) St
 }
 
 func postgresStorageFromCR(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, idp *dexv1alpha1.DexIdentityProvider, storage dexv1alpha1.DexIdentityProviderStorageSpec) (*Storage, error) {
-	credentialsSecret, err := storage.Postgres.CredentialsSecretRef.Resolve(ctx, reader, scheme, idp)
-	if err != nil {
+	credentialsSecret, ok, err := storage.Postgres.CredentialsSecretRef.Resolve(ctx, reader, scheme, idp)
+	if !ok || err != nil {
 		return nil, fmt.Errorf("failed to resolve postgres credentials secret: %w", err)
 	}
 
@@ -211,8 +211,8 @@ func postgresStorageFromCR(ctx context.Context, reader client.Reader, scheme *ru
 }
 
 func ldapConnectorFromCR(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, idp *dexv1alpha1.DexIdentityProvider, connector dexv1alpha1.DexIdentityProviderConnectorSpec) (*Connector, error) {
-	bindPasswordSecret, err := connector.LDAP.BindPasswordSecretRef.Resolve(ctx, reader, scheme, idp)
-	if err != nil {
+	bindPasswordSecret, ok, err := connector.LDAP.BindPasswordSecretRef.Resolve(ctx, reader, scheme, idp)
+	if !ok || err != nil {
 		return nil, fmt.Errorf("failed to resolve bind credentials secret: %w", err)
 	}
 
@@ -276,8 +276,8 @@ func ldapConnectorFromCR(ctx context.Context, reader client.Reader, scheme *runt
 }
 
 func oidcConnectorFromCR(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, idp *dexv1alpha1.DexIdentityProvider, connector dexv1alpha1.DexIdentityProviderConnectorSpec) (*Connector, error) {
-	clientSecret, err := connector.OIDC.ClientSecretRef.Resolve(ctx, reader, scheme, idp)
-	if err != nil {
+	clientSecret, ok, err := connector.OIDC.ClientSecretRef.Resolve(ctx, reader, scheme, idp)
+	if !ok || err != nil {
 		return nil, fmt.Errorf("failed to resolve client secret: %w", err)
 	}
 

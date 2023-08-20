@@ -33,7 +33,7 @@ type DexIdentityProviderReference struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
-func (ref *DexIdentityProviderReference) Resolve(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, parent runtime.Object) (runtime.Object, error) {
+func (ref *DexIdentityProviderReference) Resolve(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, parent runtime.Object) (runtime.Object, bool, error) {
 	objRef := &reference.ObjectReference{
 		Name:      ref.Name,
 		Namespace: ref.Namespace,
@@ -51,7 +51,7 @@ type DexOAuth2ClientReference struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
-func (ref *DexOAuth2ClientReference) Resolve(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, parent runtime.Object) (runtime.Object, error) {
+func (ref *DexOAuth2ClientReference) Resolve(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, parent runtime.Object) (runtime.Object, bool, error) {
 	objRef := &reference.ObjectReference{
 		Name:      ref.Name,
 		Namespace: ref.Namespace,

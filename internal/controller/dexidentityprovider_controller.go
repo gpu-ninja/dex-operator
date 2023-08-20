@@ -19,18 +19,16 @@ package controller
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"net"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"time"
 
-	"dario.cat/mergo"
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
-	"github.com/gpu-ninja/dex-operator/internal/constants"
 	"github.com/gpu-ninja/dex-operator/internal/dex"
-	"github.com/gpu-ninja/operator-utils/retryable"
+	"github.com/gpu-ninja/operator-utils/updater"
 	"github.com/gpu-ninja/operator-utils/zaplogr"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -41,7 +39,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
@@ -64,11 +61,19 @@ import (
 //+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders/finalizers,verbs=update
 
+const (
+	// FinalizerName is the name of the finalizer used by controllers.
+	FinalizerName = "dex.gpu-ninja.com/finalizer"
+	// reconcileRetryInterval is the interval at which the controller will retry
+	// to reconcile a pending resource.
+	reconcileRetryInterval = 10 * time.Second
+)
+
 // DexIdentityProviderReconciler reconciles a DexIdentityProvider object
 type DexIdentityProviderReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	EventRecorder record.EventRecorder
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -85,11 +90,11 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, err
 	}
 
-	if !controllerutil.ContainsFinalizer(&idp, constants.FinalizerName) {
+	if !controllerutil.ContainsFinalizer(&idp, FinalizerName) {
 		logger.Info("Adding Finalizer")
 
 		_, err := controllerutil.CreateOrPatch(ctx, r.Client, &idp, func() error {
-			controllerutil.AddFinalizer(&idp, constants.FinalizerName)
+			controllerutil.AddFinalizer(&idp, FinalizerName)
 
 			return nil
 		})
@@ -115,11 +120,11 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 			}
 		}
 
-		if controllerutil.ContainsFinalizer(&idp, constants.FinalizerName) {
+		if controllerutil.ContainsFinalizer(&idp, FinalizerName) {
 			logger.Info("Removing Finalizer")
 
 			_, err := controllerutil.CreateOrPatch(ctx, r.Client, &idp, func() error {
-				controllerutil.RemoveFinalizer(&idp, constants.FinalizerName)
+				controllerutil.RemoveFinalizer(&idp, FinalizerName)
 
 				return nil
 			})
@@ -131,177 +136,341 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, nil
 	}
 
-	// Make sure all references are resolvable.
-	if err := idp.ResolveReferences(ctx, r.Client, r.Scheme); err != nil {
-		if retryable.IsRetryable(err) {
-			logger.Info("Not all references are resolvable, requeuing")
+	ok, err := idp.ResolveReferences(ctx, r.Client, r.Scheme)
+	if !ok && err == nil {
+		logger.Info("Not all references are resolvable, requeuing")
 
-			r.EventRecorder.Event(&idp, corev1.EventTypeWarning,
-				"NotReady", "Not all references are resolvable")
+		r.Recorder.Event(&idp, corev1.EventTypeWarning,
+			"NotReady", "Not all references are resolvable")
 
-			if err := r.markPending(ctx, &idp); err != nil {
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{RequeueAfter: constants.ReconcileRetryInterval}, nil
+		if err := r.markPending(ctx, &idp); err != nil {
+			return ctrl.Result{}, err
 		}
 
-		logger.Error("Failed to resolve references", zap.Error(err))
-
-		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
+		return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
+	} else if err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
 			"Failed", "Failed to resolve references: %s", err)
 
 		r.markFailed(ctx, &idp,
 			fmt.Errorf("failed to resolve references: %w", err))
 
-		return ctrl.Result{}, nil
-	}
-
-	if idp.Status.Phase == dexv1alpha1.DexIdentityProviderPhaseFailed {
-		logger.Info("In failed state, ignoring")
-
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, fmt.Errorf("failed to resolve references: %w", err)
 	}
 
 	logger.Info("Creating or updating")
 
-	configSecretName, err := r.saveDexConfig(ctx, &idp)
+	configSecret, err := r.configSecretTemplate(ctx, &idp)
 	if err != nil {
-		logger.Error("Failed to render Dex config", zap.Error(err))
-
-		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to render dex config: %s", err)
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to generate dex config: %s", err)
 
 		r.markFailed(ctx, &idp,
-			fmt.Errorf("failed to render dex config: %w", err))
+			fmt.Errorf("failed to generate dex config: %w", err))
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, fmt.Errorf("failed to generate dex config: %w", err)
 	}
 
-	logger.Info("Dex config saved", zap.String("secret", configSecretName))
+	if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, configSecret); err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to reconcile dex config: %s", err)
 
-	statefulSetNamespaceName := types.NamespacedName{Name: idp.Name, Namespace: idp.Namespace}
-	statefulSet := appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      statefulSetNamespaceName.Name,
-			Namespace: statefulSetNamespaceName.Namespace,
-		},
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to reconcile dex config: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile dex config: %w", err)
 	}
 
-	var creatingStatefulSet bool
-	if err := r.Get(ctx, statefulSetNamespaceName, &statefulSet); err != nil && errors.IsNotFound(err) {
-		creatingStatefulSet = true
+	logger.Info("Dex config saved", zap.String("secret", configSecret.Name))
+
+	logger.Info("Reconciling statefulset")
+
+	sts, err := r.statefulSetTemplate(&idp, configSecret.Name)
+	if err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to generate statefulset template: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to generate statefulset template: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to generate statefulset template: %w", err)
 	}
 
-	logger.Info("Reconciling StatefulSet", zap.Bool("creating", creatingStatefulSet))
+	if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, sts); err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to reconcile statefulset: %s", err)
 
-	statefulSetOpResult, err := controllerutil.CreateOrPatch(ctx, r.Client, &statefulSet, func() error {
-		volumes, volumeMounts, err := r.getDexCertificateVolumes(ctx, &idp)
-		if err != nil {
-			return fmt.Errorf("failed to get dex volume mounts: %w", err)
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to reconcile statefulset: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile statefulset: %w", err)
+	}
+
+	logger.Info("Statefulset successfully reconciled")
+
+	logger.Info("Reconciling web service")
+
+	webSvc, err := r.webServiceTemplate(&idp)
+	if err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to generate web service template: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to generate web service template: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to generate web service template: %w", err)
+	}
+
+	if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, webSvc); err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to reconcile web service: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to reconcile web service: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile web service: %w", err)
+	}
+
+	logger.Info("Web service successfully reconciled")
+
+	logger.Info("Reconciling API Service")
+
+	apiSvc, err := r.apiServiceTemplate(&idp)
+	if err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to generate api service template: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to generate api service template: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to generate api service template: %w", err)
+	}
+
+	if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, apiSvc); err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to reconcile api service: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to reconcile api service: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile api service: %w", err)
+	}
+
+	ready, err := r.isStatefulSetReady(ctx, &idp)
+	if err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to check if statefulset is ready: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to check if statefulset is ready: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to check if statefulset is ready: %w", err)
+	}
+
+	if !ready {
+		logger.Info("Waiting for statefulset to become ready")
+
+		r.Recorder.Event(&idp, corev1.EventTypeNormal,
+			"Pending", "Waiting for statefulset to become ready")
+
+		if err := r.markPending(ctx, &idp); err != nil {
+			return ctrl.Result{}, err
 		}
 
-		volumes = append(volumes, corev1.Volume{
-			Name: "dex-config",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: configSecretName,
+		return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
+	}
+
+	if idp.Status.Phase != dexv1alpha1.DexIdentityProviderPhaseReady {
+		r.Recorder.Event(&idp, corev1.EventTypeNormal,
+			"Created", "Successfully created")
+
+		if err := r.markReady(ctx, &idp); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *DexIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&dexv1alpha1.DexIdentityProvider{}).
+		Owns(&appsv1.StatefulSet{}).
+		Owns(&corev1.Service{}).
+		Owns(&corev1.Secret{}).
+		Complete(r)
+}
+
+func (r *DexIdentityProviderReconciler) markPending(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) error {
+	key := client.ObjectKeyFromObject(idp)
+	err := updater.UpdateStatus(ctx, r.Client, key, idp, func() error {
+		idp.Status.ObservedGeneration = idp.ObjectMeta.Generation
+		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhasePending
+
+		meta.SetStatusCondition(&idp.Status.Conditions, metav1.Condition{
+			Type:               string(dexv1alpha1.DexIdentityProviderConditionTypePending),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: idp.ObjectMeta.Generation,
+			Reason:             "Pending",
+			Message:            "Dex Identity Provider is pending",
+		})
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to mark as pending: %w", err)
+	}
+
+	return nil
+}
+
+func (r *DexIdentityProviderReconciler) markReady(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) error {
+	key := client.ObjectKeyFromObject(idp)
+	err := updater.UpdateStatus(ctx, r.Client, key, idp, func() error {
+		idp.Status.ObservedGeneration = idp.ObjectMeta.Generation
+		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhaseReady
+
+		meta.SetStatusCondition(&idp.Status.Conditions, metav1.Condition{
+			Type:               string(dexv1alpha1.DexIdentityProviderConditionTypeReady),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: idp.ObjectMeta.Generation,
+			Reason:             "Ready",
+			Message:            "Dex Identity Provider is ready",
+		})
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to mark as ready: %w", err)
+	}
+
+	return nil
+}
+
+func (r *DexIdentityProviderReconciler) markFailed(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider, err error) {
+	logger := zaplogr.FromContext(ctx)
+
+	key := client.ObjectKeyFromObject(idp)
+	updateErr := updater.UpdateStatus(ctx, r.Client, key, idp, func() error {
+		idp.Status.ObservedGeneration = idp.ObjectMeta.Generation
+		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhaseFailed
+
+		meta.SetStatusCondition(&idp.Status.Conditions, metav1.Condition{
+			Type:               string(dexv1alpha1.DexIdentityProviderConditionTypeFailed),
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: idp.ObjectMeta.Generation,
+			Reason:             "Failed",
+			Message:            err.Error(),
+		})
+
+		return nil
+	})
+	if updateErr != nil {
+		logger.Error("Failed to mark as failed", zap.Error(updateErr))
+	}
+}
+
+func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.DexIdentityProvider, configSecretName string) (*appsv1.StatefulSet, error) {
+	volumes, volumeMounts, err := getDexCertificateVolumes(idp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dex volume mounts: %w", err)
+	}
+
+	volumes = append(volumes, corev1.Volume{
+		Name: "dex-config",
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: configSecretName,
+			},
+		},
+	})
+
+	volumeMounts = append(volumeMounts, corev1.VolumeMount{
+		Name:      "dex-config",
+		MountPath: "/etc/dex/config.yaml",
+		SubPath:   "config.yaml",
+		ReadOnly:  true,
+	})
+
+	var volumeClaimTemplates []corev1.PersistentVolumeClaim
+	if idp.Spec.LocalStorage != nil {
+		storageSize, err := resource.ParseQuantity(idp.Spec.LocalStorage.Size)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse local storage size: %w", err)
+		}
+
+		volumeClaimTemplates = append(volumeClaimTemplates, corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "dex-data",
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: idp.Spec.LocalStorage.StorageClassName,
+				AccessModes: []corev1.PersistentVolumeAccessMode{
+					corev1.ReadWriteOnce,
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: storageSize,
+					},
 				},
 			},
 		})
 
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "dex-config",
-			MountPath: "/etc/dex/config.yaml",
-			SubPath:   "config.yaml",
-			ReadOnly:  true,
+			Name:      "dex-data",
+			MountPath: idp.Spec.LocalStorage.MountPath,
 		})
+	}
 
-		var volumeClaimTemplates []corev1.PersistentVolumeClaim
-		if idp.Spec.LocalStorage != nil {
-			storageSize, err := resource.ParseQuantity(idp.Spec.LocalStorage.Size)
-			if err != nil {
-				return fmt.Errorf("failed to parse local storage size: %w", err)
-			}
+	ports, err := getDexPorts(idp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get dex ports: %w", err)
+	}
 
-			volumeClaimTemplates = append(volumeClaimTemplates, corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "dex-data",
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: idp.Spec.LocalStorage.StorageClassName,
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: storageSize,
-						},
+	var readinessProbe *corev1.Probe
+	for _, port := range ports {
+		if port.Name == "http" {
+			readinessProbe = &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path: "/healthz",
+						Port: intstr.IntOrString{IntVal: port.ContainerPort},
 					},
 				},
-			})
-
-			volumeMounts = append(volumeMounts, corev1.VolumeMount{
-				Name:      "dex-data",
-				MountPath: idp.Spec.LocalStorage.MountPath,
-			})
-		}
-
-		ports, err := r.getDexPorts(&idp)
-		if err != nil {
-			return fmt.Errorf("failed to get dex ports: %w", err)
-		}
-
-		var readinessProbe *corev1.Probe
-		for _, port := range ports {
-			if port.Name == "http" {
-				readinessProbe = &corev1.Probe{
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path: "/healthz",
-							Port: intstr.IntOrString{IntVal: port.ContainerPort},
-						},
-					},
-					InitialDelaySeconds: 5,
-					PeriodSeconds:       10,
-				}
-
-				break
-			} else if port.Name == "https" {
-				readinessProbe = &corev1.Probe{
-					ProbeHandler: corev1.ProbeHandler{
-						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/healthz",
-							Port:   intstr.IntOrString{IntVal: port.ContainerPort},
-							Scheme: corev1.URISchemeHTTPS,
-						},
-					},
-					InitialDelaySeconds: 5,
-					PeriodSeconds:       10,
-				}
-
-				break
+				InitialDelaySeconds: 5,
+				PeriodSeconds:       10,
 			}
-		}
 
-		if err := controllerutil.SetOwnerReference(&idp, &statefulSet, r.Scheme); err != nil {
-			return fmt.Errorf("failed to set owner reference: %w", err)
-		}
+			break
+		} else if port.Name == "https" {
+			readinessProbe = &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path:   "/healthz",
+						Port:   intstr.IntOrString{IntVal: port.ContainerPort},
+						Scheme: corev1.URISchemeHTTPS,
+					},
+				},
+				InitialDelaySeconds: 5,
+				PeriodSeconds:       10,
+			}
 
-		if statefulSet.ObjectMeta.Labels == nil {
-			statefulSet.ObjectMeta.Labels = make(map[string]string)
+			break
 		}
+	}
 
-		for k, v := range idp.ObjectMeta.Labels {
-			statefulSet.ObjectMeta.Labels[k] = v
-		}
+	replicas := idp.Spec.Replicas
+	if replicas == nil {
+		replicas = ptr.To(int32(1))
+	}
 
-		replicas := idp.Spec.Replicas
-		if replicas == nil {
-			replicas = ptr.To(int32(1))
-		}
-
-		spec := appsv1.StatefulSetSpec{
+	sts := appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      idp.Name,
+			Namespace: idp.Namespace,
+			Labels:    make(map[string]string),
+		},
+		Spec: appsv1.StatefulSetSpec{
 			Replicas:        replicas,
 			ServiceName:     "dex",
 			MinReadySeconds: 10,
@@ -345,362 +514,180 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 				},
 			},
 			VolumeClaimTemplates: volumeClaimTemplates,
-		}
-
-		if creatingStatefulSet {
-			statefulSet.Spec = spec
-		} else if err := mergo.Merge(&statefulSet.Spec, spec, mergo.WithOverride, mergo.WithSliceDeepCopy); err != nil {
-			return fmt.Errorf("failed to merge spec: %w", err)
-		}
-
-		return nil
-	})
-	if err != nil {
-		logger.Error("Failed to reconcile StatefulSet", zap.Error(err))
-
-		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to reconcile statefulset: %s", err)
-
-		r.markFailed(ctx, &idp,
-			fmt.Errorf("failed to reconcile statefulset: %w", err))
-
-		return ctrl.Result{}, nil
-	}
-
-	if statefulSetOpResult != controllerutil.OperationResultNone {
-		logger.Info("StatefulSet successfully reconciled, marking as pending",
-			zap.String("operation", string(statefulSetOpResult)))
-
-		if err := r.markPending(ctx, &idp); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	webServiceNamespaceName := types.NamespacedName{Name: idp.Name, Namespace: idp.Namespace}
-	webService := corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      webServiceNamespaceName.Name,
-			Namespace: webServiceNamespaceName.Namespace,
 		},
 	}
 
-	var creatingWebService bool
-	if err := r.Client.Get(ctx, webServiceNamespaceName, &webService); err != nil && errors.IsNotFound(err) {
-		creatingWebService = true
+	if err := controllerutil.SetOwnerReference(idp, &sts, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set owner reference: %w", err)
 	}
 
-	logger.Info("Reconciling Web Service", zap.Bool("creating", creatingWebService))
-
-	webServiceOpResult, err := controllerutil.CreateOrPatch(ctx, r.Client, &webService, func() error {
-		var ports []corev1.ServicePort
-
-		if idp.Spec.Web.HTTP != "" {
-			ports = append(ports, corev1.ServicePort{
-				Name:       "http",
-				Port:       int32(80),
-				TargetPort: intstr.FromString("http"),
-			})
-		}
-
-		if idp.Spec.Web.HTTPS != "" {
-			ports = append(ports, corev1.ServicePort{
-				Name:       "https",
-				Port:       int32(443),
-				TargetPort: intstr.FromString("https"),
-			})
-		}
-
-		if err := controllerutil.SetControllerReference(&idp, &webService, r.Scheme); err != nil {
-			return fmt.Errorf("failed to set controller reference: %w", err)
-		}
-
-		if idp.ObjectMeta.Labels != nil {
-			if webService.ObjectMeta.Labels == nil {
-				webService.ObjectMeta.Labels = make(map[string]string)
-			}
-
-			for k, v := range idp.ObjectMeta.Labels {
-				webService.ObjectMeta.Labels[k] = v
-			}
-		}
-
-		if idp.Spec.Web.Annotations != nil {
-			if webService.ObjectMeta.Annotations == nil {
-				webService.ObjectMeta.Annotations = make(map[string]string)
-			}
-
-			for k, v := range idp.Spec.Web.Annotations {
-				webService.ObjectMeta.Annotations[k] = v
-			}
-		}
-
-		spec := corev1.ServiceSpec{
-			Selector: map[string]string{
-				"app.kubernetes.io/name":     "dex",
-				"app.kubernetes.io/instance": idp.Name,
-			},
-			Ports: ports,
-		}
-
-		if creatingWebService {
-			webService.Spec = spec
-		} else {
-			if err := mergo.Merge(&webService.Spec, spec, mergo.WithOverride, mergo.WithSliceDeepCopy); err != nil {
-				return fmt.Errorf("failed to merge spec: %w", err)
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		logger.Error("Failed to reconcile Web Service", zap.Error(err))
-
-		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to reconcile web service: %s", err)
-
-		r.markFailed(ctx, &idp,
-			fmt.Errorf("failed to reconcile web service: %w", err))
-
-		return ctrl.Result{}, nil
+	for k, v := range idp.ObjectMeta.Labels {
+		sts.ObjectMeta.Labels[k] = v
 	}
 
-	if webServiceOpResult != controllerutil.OperationResultNone {
-		logger.Info("Web Service successfully reconciled",
-			zap.String("operation", string(webServiceOpResult)))
-	}
+	sts.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
+	sts.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
+	sts.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
 
-	apiServiceNamespaceName := types.NamespacedName{Name: idp.Name + "-api", Namespace: idp.Namespace}
-	apiService := corev1.Service{
+	return &sts, nil
+}
+
+func (r *DexIdentityProviderReconciler) isStatefulSetReady(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) (bool, error) {
+	sts := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      apiServiceNamespaceName.Name,
-			Namespace: apiServiceNamespaceName.Namespace,
-		},
-	}
-
-	var creatingAPIService bool
-	if err := r.Client.Get(ctx, apiServiceNamespaceName, &apiService); err != nil && errors.IsNotFound(err) {
-		creatingAPIService = true
-	}
-
-	logger.Info("Reconciling API Service", zap.Bool("creating", creatingAPIService))
-
-	apiServiceOpResult, err := controllerutil.CreateOrPatch(ctx, r.Client, &apiService, func() error {
-		var ports []corev1.ServicePort
-
-		if idp.Spec.GRPC.CertificateSecretRef != nil {
-			ports = append(ports, corev1.ServicePort{
-				Name:       "https",
-				Port:       int32(443),
-				TargetPort: intstr.FromString("grpc"),
-			})
-		} else {
-			ports = append(ports, corev1.ServicePort{
-				Name:       "http",
-				Port:       int32(80),
-				TargetPort: intstr.FromString("grpc"),
-			})
-		}
-
-		if err := controllerutil.SetControllerReference(&idp, &apiService, r.Scheme); err != nil {
-			return fmt.Errorf("failed to set controller reference: %w", err)
-		}
-
-		if idp.ObjectMeta.Labels != nil {
-			if apiService.ObjectMeta.Labels == nil {
-				apiService.ObjectMeta.Labels = make(map[string]string)
-			}
-
-			for k, v := range idp.ObjectMeta.Labels {
-				apiService.ObjectMeta.Labels[k] = v
-			}
-		}
-
-		if idp.Spec.Web.Annotations != nil {
-			if webService.ObjectMeta.Annotations == nil {
-				webService.ObjectMeta.Annotations = make(map[string]string)
-			}
-
-			for k, v := range idp.Spec.Web.Annotations {
-				webService.ObjectMeta.Annotations[k] = v
-			}
-		}
-
-		spec := corev1.ServiceSpec{
-			Selector: map[string]string{
-				"app.kubernetes.io/name":     "dex",
-				"app.kubernetes.io/instance": idp.Name,
-			},
-			Ports: ports,
-		}
-
-		if creatingAPIService {
-			apiService.Spec = spec
-		} else {
-			if err := mergo.Merge(&apiService.Spec, spec, mergo.WithOverride, mergo.WithSliceDeepCopy); err != nil {
-				return fmt.Errorf("failed to merge spec: %w", err)
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		logger.Error("Failed to reconcile API Service", zap.Error(err))
-
-		r.EventRecorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to reconcile api service: %s", err)
-
-		r.markFailed(ctx, &idp,
-			fmt.Errorf("failed to reconcile api service: %w", err))
-
-		return ctrl.Result{}, nil
-	}
-
-	if apiServiceOpResult != controllerutil.OperationResultNone {
-		logger.Info("API Service successfully reconciled",
-			zap.String("operation", string(apiServiceOpResult)))
-	}
-
-	if statefulSet.Status.ReadyReplicas != *statefulSet.Spec.Replicas {
-		logger.Info("Waiting for StatefulSet to become ready")
-
-		r.EventRecorder.Event(&idp, corev1.EventTypeNormal,
-			"Pending", "Waiting for statefulset to become ready")
-
-		if err := r.markPending(ctx, &idp); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{RequeueAfter: constants.ReconcileRetryInterval}, nil
-	}
-
-	if idp.Status.Phase != dexv1alpha1.DexIdentityProviderPhaseReady {
-		r.EventRecorder.Event(&idp, corev1.EventTypeNormal,
-			"Created", "Successfully created")
-
-		if err := r.markReady(ctx, &idp); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
-}
-
-func (r *DexIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		Named("dexidentityprovider-controller").
-		For(&dexv1alpha1.DexIdentityProvider{}).
-		Owns(&appsv1.StatefulSet{}).
-		Owns(&corev1.Service{}).
-		Owns(&corev1.Secret{}).
-		Complete(r)
-}
-
-func (r *DexIdentityProviderReconciler) markPending(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) error {
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
-		idp.Status.ObservedGeneration = idp.Generation
-		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhasePending
-
-		meta.SetStatusCondition(&idp.Status.Conditions, metav1.Condition{
-			Type:               string(dexv1alpha1.DexIdentityProviderConditionTypePending),
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: idp.Generation,
-			Reason:             "Pending",
-			Message:            "Dex Identity Provider is pending",
-		})
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to mark as pending: %w", err)
-	}
-
-	return nil
-}
-
-func (r *DexIdentityProviderReconciler) markReady(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) error {
-	_, err := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
-		idp.Status.ObservedGeneration = idp.Generation
-		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhaseReady
-
-		meta.SetStatusCondition(&idp.Status.Conditions, metav1.Condition{
-			Type:               string(dexv1alpha1.DexIdentityProviderConditionTypeReady),
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: idp.Generation,
-			Reason:             "Ready",
-			Message:            "Dex Identity Provider is ready",
-		})
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to mark as ready: %w", err)
-	}
-
-	return nil
-}
-
-func (r *DexIdentityProviderReconciler) markFailed(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider, err error) {
-	logger := zaplogr.FromContext(ctx)
-
-	_, updateErr := controllerutil.CreateOrPatch(ctx, r.Client, idp, func() error {
-		idp.Status.ObservedGeneration = idp.Generation
-		idp.Status.Phase = dexv1alpha1.DexIdentityProviderPhaseFailed
-
-		meta.SetStatusCondition(&idp.Status.Conditions, metav1.Condition{
-			Type:               string(dexv1alpha1.DexIdentityProviderConditionTypeFailed),
-			Status:             metav1.ConditionTrue,
-			ObservedGeneration: idp.Generation,
-			Reason:             "Failed",
-			Message:            err.Error(),
-		})
-
-		return nil
-	})
-	if updateErr != nil {
-		logger.Error("Failed to mark as failed", zap.Error(updateErr))
-	}
-}
-
-func (r *DexIdentityProviderReconciler) saveDexConfig(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) (string, error) {
-	config, err := dex.ConfigFromCR(ctx, r.Client, r.Scheme, idp)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate dex config: %w", err)
-	}
-
-	configYAML, err := yaml.Marshal(config)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal dex config: %w", err)
-	}
-
-	configHash := fmt.Sprintf("%x", sha256.Sum256([]byte(configYAML)))
-
-	configSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", idp.Name, configHash[:10]),
+			Name:      idp.Name,
 			Namespace: idp.Namespace,
 		},
 	}
 
-	_, err = controllerutil.CreateOrPatch(ctx, r.Client, configSecret, func() error {
-		if err := controllerutil.SetControllerReference(idp, configSecret, r.Scheme); err != nil {
-			return fmt.Errorf("failed to set controller reference: %w", err)
-		}
-
-		configSecret.Type = corev1.SecretTypeOpaque
-		configSecret.Data = map[string][]byte{
-			"config.yaml": []byte(configYAML),
-		}
-
-		return nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to create or update config secret: %w", err)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(&sts), &sts); err != nil {
+		return false, fmt.Errorf("failed to get statefulset: %w", err)
 	}
 
-	return configSecret.Name, nil
+	return sts.Status.ReadyReplicas == *sts.Spec.Replicas, nil
 }
 
-func (r *DexIdentityProviderReconciler) getDexCertificateVolumes(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) ([]corev1.Volume, []corev1.VolumeMount, error) {
+func (r *DexIdentityProviderReconciler) webServiceTemplate(idp *dexv1alpha1.DexIdentityProvider) (*corev1.Service, error) {
+	var ports []corev1.ServicePort
+
+	if idp.Spec.Web.HTTP != "" {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "http",
+			Port:       int32(80),
+			TargetPort: intstr.FromString("http"),
+		})
+	}
+
+	if idp.Spec.Web.HTTPS != "" {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "https",
+			Port:       int32(443),
+			TargetPort: intstr.FromString("https"),
+		})
+	}
+
+	svc := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        idp.Name,
+			Namespace:   idp.Namespace,
+			Labels:      make(map[string]string),
+			Annotations: idp.Spec.Web.Annotations,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app.kubernetes.io/name":     "dex",
+				"app.kubernetes.io/instance": idp.Name,
+			},
+			Ports: ports,
+		},
+	}
+
+	if err := controllerutil.SetOwnerReference(idp, &svc, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	for k, v := range idp.ObjectMeta.Labels {
+		svc.ObjectMeta.Labels[k] = v
+	}
+
+	svc.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
+	svc.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
+	svc.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
+
+	return &svc, nil
+}
+
+func (r *DexIdentityProviderReconciler) apiServiceTemplate(idp *dexv1alpha1.DexIdentityProvider) (*corev1.Service, error) {
+	var ports []corev1.ServicePort
+
+	if idp.Spec.GRPC.CertificateSecretRef != nil {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "https",
+			Port:       int32(443),
+			TargetPort: intstr.FromString("grpc"),
+		})
+	} else {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "http",
+			Port:       int32(80),
+			TargetPort: intstr.FromString("grpc"),
+		})
+	}
+
+	svc := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        idp.Name + "-api",
+			Namespace:   idp.Namespace,
+			Labels:      make(map[string]string),
+			Annotations: idp.Spec.GRPC.Annotations,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app.kubernetes.io/name":     "dex",
+				"app.kubernetes.io/instance": idp.Name,
+			},
+			Ports: ports,
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(idp, &svc, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	for k, v := range idp.ObjectMeta.Labels {
+		svc.ObjectMeta.Labels[k] = v
+	}
+
+	svc.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
+	svc.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
+	svc.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
+
+	return &svc, nil
+}
+
+func (r *DexIdentityProviderReconciler) configSecretTemplate(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) (*corev1.Secret, error) {
+	config, err := dex.ConfigFromCR(ctx, r.Client, r.Scheme, idp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate dex config: %w", err)
+	}
+
+	configYAML, err := yaml.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal dex config: %w", err)
+	}
+
+	secret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      idp.Name + "-config",
+			Namespace: idp.Namespace,
+			Labels:    make(map[string]string),
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"config.yaml": []byte(configYAML),
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(idp, &secret, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	for k, v := range idp.ObjectMeta.Labels {
+		secret.ObjectMeta.Labels[k] = v
+	}
+
+	secret.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
+	secret.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
+	secret.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
+
+	// Give each revision of the configmap a unique name so that dependent pods are
+	// recreated when the config changes.
+	secret.ObjectMeta.Name += "-" + updater.HashObject(&secret)
+
+	return &secret, nil
+}
+
+func getDexCertificateVolumes(idp *dexv1alpha1.DexIdentityProvider) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	type referencedSecret struct {
 		secretName string
 		caOnly     bool
@@ -797,7 +784,7 @@ func (r *DexIdentityProviderReconciler) getDexCertificateVolumes(ctx context.Con
 	return volumes, volumeMounts, nil
 }
 
-func (r *DexIdentityProviderReconciler) getDexPorts(idp *dexv1alpha1.DexIdentityProvider) ([]corev1.ContainerPort, error) {
+func getDexPorts(idp *dexv1alpha1.DexIdentityProvider) ([]corev1.ContainerPort, error) {
 	var ports []corev1.ContainerPort
 
 	if idp.Spec.Web.HTTP != "" {

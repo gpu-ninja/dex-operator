@@ -224,46 +224,53 @@ type DexIdentityProviderList struct {
 	Items           []DexIdentityProvider `json:"items"`
 }
 
-func (d *DexIdentityProvider) ResolveReferences(ctx context.Context, reader client.Reader, scheme *runtime.Scheme) error {
+func (d *DexIdentityProvider) ResolveReferences(ctx context.Context, reader client.Reader, scheme *runtime.Scheme) (bool, error) {
 	if d.Spec.ClientCertificateSecretRef != nil {
-		if _, err := d.Spec.ClientCertificateSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-			return err
+		_, ok, err := d.Spec.ClientCertificateSecretRef.Resolve(ctx, reader, scheme, d)
+		if !ok || err != nil {
+			return ok, err
 		}
 	}
 
 	if d.Spec.Web.CertificateSecretRef != nil {
-		if _, err := d.Spec.Web.CertificateSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-			return err
+		_, ok, err := d.Spec.Web.CertificateSecretRef.Resolve(ctx, reader, scheme, d)
+		if !ok || err != nil {
+			return ok, err
 		}
 	}
 
 	if d.Spec.GRPC.CertificateSecretRef != nil {
-		if _, err := d.Spec.GRPC.CertificateSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-			return err
+		_, ok, err := d.Spec.GRPC.CertificateSecretRef.Resolve(ctx, reader, scheme, d)
+		if !ok || err != nil {
+			return ok, err
 		}
 	}
 
 	if d.Spec.GRPC.ClientCASecretRef != nil {
-		if _, err := d.Spec.GRPC.ClientCASecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-			return err
+		_, ok, err := d.Spec.GRPC.ClientCASecretRef.Resolve(ctx, reader, scheme, d)
+		if !ok || err != nil {
+			return ok, err
 		}
 	}
 
 	if d.Spec.Storage.Type == DexIdentityProviderStorageTypePostgres && d.Spec.Storage.Postgres != nil {
-		if _, err := d.Spec.Storage.Postgres.CredentialsSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-			return err
+		_, ok, err := d.Spec.Storage.Postgres.CredentialsSecretRef.Resolve(ctx, reader, scheme, d)
+		if !ok || err != nil {
+			return ok, err
 		}
 
 		if d.Spec.Storage.Postgres.SSL != nil {
 			if d.Spec.Storage.Postgres.SSL.CASecretRef != nil {
-				if _, err := d.Spec.Storage.Postgres.SSL.CASecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-					return err
+				_, ok, err := d.Spec.Storage.Postgres.SSL.CASecretRef.Resolve(ctx, reader, scheme, d)
+				if !ok || err != nil {
+					return ok, err
 				}
 			}
 
 			if d.Spec.Storage.Postgres.SSL.ClientCertificateSecretRef != nil {
-				if _, err := d.Spec.Storage.Postgres.SSL.ClientCertificateSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-					return err
+				_, ok, err := d.Spec.Storage.Postgres.SSL.ClientCertificateSecretRef.Resolve(ctx, reader, scheme, d)
+				if !ok || err != nil {
+					return ok, err
 				}
 			}
 		}
@@ -271,37 +278,42 @@ func (d *DexIdentityProvider) ResolveReferences(ctx context.Context, reader clie
 
 	for _, connector := range d.Spec.Connectors {
 		if connector.Type == DexIdentityProviderConnectorTypeLDAP && connector.LDAP != nil {
-			if _, err := connector.LDAP.BindPasswordSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-				return err
+			_, ok, err := connector.LDAP.BindPasswordSecretRef.Resolve(ctx, reader, scheme, d)
+			if !ok || err != nil {
+				return ok, err
 			}
 
 			if connector.LDAP.CASecretRef != nil {
-				if _, err := connector.LDAP.CASecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-					return err
+				_, ok, err := connector.LDAP.CASecretRef.Resolve(ctx, reader, scheme, d)
+				if !ok || err != nil {
+					return ok, err
 				}
 			}
 
 			if connector.LDAP.ClientCertificateSecretRef != nil {
-				if _, err := connector.LDAP.ClientCertificateSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-					return err
+				_, ok, err := connector.LDAP.ClientCertificateSecretRef.Resolve(ctx, reader, scheme, d)
+				if !ok || err != nil {
+					return ok, err
 				}
 			}
 		} else if connector.Type == DexIdentityProviderConnectorTypeOIDC && connector.OIDC != nil {
-			if _, err := connector.OIDC.ClientSecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-				return err
+			_, ok, err := connector.OIDC.ClientSecretRef.Resolve(ctx, reader, scheme, d)
+			if !ok || err != nil {
+				return ok, err
 			}
 
 			if connector.OIDC.CASecretRef != nil {
-				if _, err := connector.OIDC.CASecretRef.Resolve(ctx, reader, scheme, d); err != nil {
-					return err
+				_, ok, err := connector.OIDC.CASecretRef.Resolve(ctx, reader, scheme, d)
+				if !ok || err != nil {
+					return ok, err
 				}
 			}
 		} else {
-			return fmt.Errorf("invalid connector: %s", connector.Type)
+			return false, fmt.Errorf("invalid connector: %s", connector.Type)
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 func init() {

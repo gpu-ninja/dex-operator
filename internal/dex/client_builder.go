@@ -80,8 +80,8 @@ func (b *clientBuilderImpl) Build(ctx context.Context) (api.DexClient, error) {
 
 	transportCredentials := insecure.NewCredentials()
 	if b.idp.Spec.GRPC.CertificateSecretRef != nil {
-		certificateSecret, err := b.idp.Spec.GRPC.CertificateSecretRef.Resolve(ctx, b.reader, b.scheme, b.idp)
-		if err != nil {
+		certificateSecret, ok, err := b.idp.Spec.GRPC.CertificateSecretRef.Resolve(ctx, b.reader, b.scheme, b.idp)
+		if !ok || err != nil {
 			return nil, fmt.Errorf("failed to get grpc certificate secret: %w", err)
 		}
 
@@ -95,8 +95,8 @@ func (b *clientBuilderImpl) Build(ctx context.Context) (api.DexClient, error) {
 		}
 
 		if b.idp.Spec.ClientCertificateSecretRef != nil {
-			clientCertificateSecret, err := b.idp.Spec.ClientCertificateSecretRef.Resolve(ctx, b.reader, b.scheme, b.idp)
-			if err != nil {
+			clientCertificateSecret, ok, err := b.idp.Spec.ClientCertificateSecretRef.Resolve(ctx, b.reader, b.scheme, b.idp)
+			if !ok || err != nil {
 				return nil, fmt.Errorf("failed to get grpc client certificate secret: %w", err)
 			}
 

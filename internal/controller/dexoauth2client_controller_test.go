@@ -26,7 +26,6 @@ import (
 	dexapi "github.com/dexidp/dex/api/v2"
 	"github.com/gpu-ninja/dex-operator/api"
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
-	"github.com/gpu-ninja/dex-operator/internal/constants"
 	"github.com/gpu-ninja/dex-operator/internal/controller"
 	"github.com/gpu-ninja/dex-operator/internal/dex"
 	fakeutils "github.com/gpu-ninja/operator-utils/fake"
@@ -112,7 +111,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 	t.Run("Create or Update", func(t *testing.T) {
 		eventRecorder := record.NewFakeRecorder(2)
-		r.EventRecorder = eventRecorder
+		r.Recorder = eventRecorder
 
 		subResourceClient.Reset()
 
@@ -157,10 +156,10 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 	t.Run("Delete", func(t *testing.T) {
 		deletingOauth2Client := oauth2Client.DeepCopy()
 		deletingOauth2Client.DeletionTimestamp = &metav1.Time{Time: metav1.Now().Add(-1 * time.Second)}
-		deletingOauth2Client.Finalizers = []string{constants.FinalizerName}
+		deletingOauth2Client.Finalizers = []string{controller.FinalizerName}
 
 		eventRecorder := record.NewFakeRecorder(2)
-		r.EventRecorder = eventRecorder
+		r.Recorder = eventRecorder
 
 		subResourceClient.Reset()
 
@@ -193,7 +192,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 	t.Run("References Not Resolvable", func(t *testing.T) {
 		eventRecorder := record.NewFakeRecorder(2)
-		r.EventRecorder = eventRecorder
+		r.Recorder = eventRecorder
 
 		subResourceClient.Reset()
 
@@ -226,7 +225,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 	t.Run("Identity Provider Not Ready", func(t *testing.T) {
 		eventRecorder := record.NewFakeRecorder(2)
-		r.EventRecorder = eventRecorder
+		r.Recorder = eventRecorder
 
 		subResourceClient.Reset()
 
@@ -262,7 +261,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 	t.Run("Failure", func(t *testing.T) {
 		eventRecorder := record.NewFakeRecorder(2)
-		r.EventRecorder = eventRecorder
+		r.Recorder = eventRecorder
 
 		failOnSecrets := interceptorFuncs
 		failOnSecrets.Get = func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
