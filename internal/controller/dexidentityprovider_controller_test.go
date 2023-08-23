@@ -196,21 +196,21 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 
 		var webService corev1.Service
 		err = r.Client.Get(ctx, types.NamespacedName{
-			Name:      idp.Name,
+			Name:      "dex-" + idp.Name,
 			Namespace: idp.Namespace,
 		}, &webService)
 		require.NoError(t, err)
 
 		var apiService corev1.Service
 		err = r.Client.Get(ctx, types.NamespacedName{
-			Name:      idp.Name + "-api",
+			Name:      "dex-" + idp.Name + "-api",
 			Namespace: idp.Namespace,
 		}, &apiService)
 		require.NoError(t, err)
 
 		var sts appsv1.StatefulSet
 		err = r.Client.Get(ctx, types.NamespacedName{
-			Name:      idp.Name,
+			Name:      "dex-" + idp.Name,
 			Namespace: idp.Namespace,
 		}, &sts)
 		require.NoError(t, err)

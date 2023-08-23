@@ -9,7 +9,5 @@ spec:
   issuerRef:
     name: ca
   dnsNames:
-  - demo
-  - demo-api
-  - demo.default.svc.cluster.local
-  - demo-api.default.svc.cluster.local
+  - dex-demo.default.svc.cluster.local
+  - dex-demo-api.default.svc.cluster.local

@@ -466,7 +466,7 @@ func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.Dex
 
 	sts := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      idp.Name,
+			Name:      "dex-" + idp.Name,
 			Namespace: idp.Namespace,
 			Labels:    make(map[string]string),
 		},
@@ -541,7 +541,7 @@ func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.Dex
 func (r *DexIdentityProviderReconciler) isStatefulSetReady(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) (bool, error) {
 	sts := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      idp.Name,
+			Name:      "dex-" + idp.Name,
 			Namespace: idp.Namespace,
 		},
 	}
@@ -574,7 +574,7 @@ func (r *DexIdentityProviderReconciler) webServiceTemplate(idp *dexv1alpha1.DexI
 
 	svc := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        idp.Name,
+			Name:        "dex-" + idp.Name,
 			Namespace:   idp.Namespace,
 			Labels:      make(map[string]string),
 			Annotations: idp.Spec.Web.Annotations,
@@ -622,7 +622,7 @@ func (r *DexIdentityProviderReconciler) apiServiceTemplate(idp *dexv1alpha1.DexI
 
 	svc := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        idp.Name + "-api",
+			Name:        fmt.Sprintf("dex-%s-api", idp.Name),
 			Namespace:   idp.Namespace,
 			Labels:      make(map[string]string),
 			Annotations: idp.Spec.GRPC.Annotations,
@@ -664,7 +664,7 @@ func (r *DexIdentityProviderReconciler) configSecretTemplate(ctx context.Context
 
 	secret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      idp.Name + "-config",
+			Name:      fmt.Sprintf("dex-%s-config", idp.Name),
 			Namespace: idp.Namespace,
 			Labels:    make(map[string]string),
 		},

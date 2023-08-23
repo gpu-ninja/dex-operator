@@ -15,7 +15,7 @@ spec:
       file: /var/lib/dex/dex.db
   localStorage:
     mountPath: /var/lib/dex
-    size: 1Gi
+    size: 100Mi
   web:
     https: ":8443"
     certificateSecretRef:
