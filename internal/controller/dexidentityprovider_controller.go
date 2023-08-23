@@ -489,6 +489,12 @@ func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.Dex
 				},
 				Spec: corev1.PodSpec{
 					TerminationGracePeriodSeconds: ptr.To(int64(10)),
+					SecurityContext: &corev1.PodSecurityContext{
+						RunAsNonRoot: ptr.To(true),
+						RunAsUser:    ptr.To(int64(1001)),
+						RunAsGroup:   ptr.To(int64(1001)),
+						FSGroup:      ptr.To(int64(1001)),
+					},
 					Containers: []corev1.Container{
 						{
 							Name:           "dex",

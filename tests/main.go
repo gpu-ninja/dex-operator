@@ -89,8 +89,7 @@ func main() {
 		logger.Fatal(red("Failed to install cert-manager"), zap.Error(err))
 	}
 
-	overrideYAMLPath := filepath.Join(pwd, "config/dev.yaml")
-	if err := installOperator(overrideYAMLPath, filepath.Join(pwd, "../config")); err != nil {
+	if err := installOperator(filepath.Join(pwd, "../config")); err != nil {
 		logger.Fatal(red("Failed to install operator"), zap.Error(err))
 	}
 
