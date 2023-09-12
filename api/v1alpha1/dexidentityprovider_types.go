@@ -23,6 +23,7 @@ import (
 
 	"github.com/gpu-ninja/dex-operator/api"
 	"github.com/gpu-ninja/operator-utils/reference"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -171,6 +172,8 @@ type DexIdentityProviderSpec struct {
 	// LocalStorage configures local persistent storage for the Dex container.
 	// This is useful when using a SQLite database.
 	LocalStorage *DexIdentityProviderLocalStorageSpec `json:"localStorage,omitempty"`
+	// Resources allows specifying the resource requirements for the Dex identity provider container.
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // DexIdentityProviderPhase is the current state of the Dex idP server.
