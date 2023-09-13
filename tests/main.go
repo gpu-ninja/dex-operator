@@ -173,8 +173,8 @@ func main() {
 }
 
 func buildOperatorImage(buildContextPath, relDockerfilePath, image string) error {
-	cmd := exec.Command("docker", "build", "-t", image, "-f",
-		filepath.Join(buildContextPath, relDockerfilePath), buildContextPath)
+	cmd := exec.Command("earthly", "+docker", "--VERSION=latest-dev")
+	cmd.Dir = buildContextPath
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
