@@ -11,6 +11,9 @@ jobs:
   build-and-test:
     runs-on: self-hosted
     steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
     - uses: earthly/actions-setup@v1
       with:
         version: v0.7.15
@@ -45,6 +48,10 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+ 
+    - uses: earthly/actions-setup@v1
+      with:
+        version: v0.7.15
 
     - name: Check Out Repo
       uses: actions/checkout@v3
