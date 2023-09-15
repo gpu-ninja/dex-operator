@@ -377,7 +377,7 @@ func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.Dex
 	}
 
 	volumes = append(volumes, corev1.Volume{
-		Name: "dex-config",
+		Name: "config",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
 				SecretName: configSecretName,
@@ -386,40 +386,44 @@ func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.Dex
 	})
 
 	volumeMounts = append(volumeMounts, corev1.VolumeMount{
-		Name:      "dex-config",
+		Name:      "config",
 		MountPath: "/etc/dex/config.yaml",
 		SubPath:   "config.yaml",
 		ReadOnly:  true,
+	}, corev1.VolumeMount{
+		Name:      "data",
+		MountPath: "/var/lib/dex",
 	})
 
-	var volumeClaimTemplates []corev1.PersistentVolumeClaim
-	if idp.Spec.LocalStorage != nil {
-		storageSize, err := resource.ParseQuantity(idp.Spec.LocalStorage.Size)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse local storage size: %w", err)
+	volumeClaimTemplates := []corev1.PersistentVolumeClaim{{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "data",
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{
+				corev1.ReadWriteOnce,
+			},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse("100Mi"),
+				},
+			},
+		},
+	}}
+
+	for _, volumeClaimTemplate := range idp.Spec.VolumeClaimTemplates {
+		var found bool
+		for i, existingVolumeClaimTemplate := range volumeClaimTemplates {
+			if existingVolumeClaimTemplate.Name == volumeClaimTemplate.Name {
+				volumeClaimTemplates[i] = volumeClaimTemplate
+				found = true
+				break
+			}
 		}
 
-		volumeClaimTemplates = append(volumeClaimTemplates, corev1.PersistentVolumeClaim{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "dex-data",
-			},
-			Spec: corev1.PersistentVolumeClaimSpec{
-				StorageClassName: idp.Spec.LocalStorage.StorageClassName,
-				AccessModes: []corev1.PersistentVolumeAccessMode{
-					corev1.ReadWriteOnce,
-				},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceStorage: storageSize,
-					},
-				},
-			},
-		})
-
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "dex-data",
-			MountPath: idp.Spec.LocalStorage.MountPath,
-		})
+		if !found {
+			volumeClaimTemplates = append(volumeClaimTemplates, volumeClaimTemplate)
+		}
 	}
 
 	ports, err := getDexPorts(idp)

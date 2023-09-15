@@ -13,9 +13,6 @@ spec:
     type: sqlite3
     sqlite3:
       file: /var/lib/dex/dex.db
-  localStorage:
-    mountPath: /var/lib/dex
-    size: 100Mi
   web:
     https: ":8443"
     certificateSecretRef:
@@ -55,3 +52,12 @@ spec:
         userMatchers:
         - userAttr: uid
           groupAttr: member
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Mi

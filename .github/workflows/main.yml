@@ -60,7 +60,7 @@ jobs:
       run: earthly --push +docker-all --VERSION=${{ github.ref_name }}
 
     - name: Bundle Configuration
-      run: earthly +bundle
+      run: earthly +bundle --VERSION=${{ github.ref_name }}
     
     - name: Upload Bundle
       uses: softprops/action-gh-release@v1

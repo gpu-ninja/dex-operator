@@ -33,6 +33,7 @@ import (
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -116,10 +117,23 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 					},
 				},
 			},
-			LocalStorage: &dexv1alpha1.DexIdentityProviderLocalStorageSpec{
-				MountPath:        "/var/lib/dex",
-				Size:             "1Gi",
-				StorageClassName: ptr.To("local-path"),
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "dex",
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: ptr.To("local-path"),
+						AccessModes: []corev1.PersistentVolumeAccessMode{
+							corev1.ReadWriteMany,
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
 			},
 		},
 	}
@@ -217,7 +231,7 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 
 		var configVolume *corev1.Volume
 		for _, volume := range sts.Spec.Template.Spec.Volumes {
-			if volume.Name == "dex-config" {
+			if volume.Name == "config" {
 				configVolume = &volume
 				break
 			}

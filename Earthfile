@@ -20,7 +20,9 @@ docker:
 bundle:
   FROM +tools
   COPY config ./config
-  RUN kbld -f config > dex-operator.yaml
+  COPY hack ./hack
+  ARG VERSION
+  RUN ytt --data-value version=${VERSION} -f config -f hack/set-version.yaml | kbld -f - > dex-operator.yaml
   SAVE ARTIFACT ./dex-operator.yaml AS LOCAL dist/dex-operator.yaml
 
 dex-operator:
@@ -35,8 +37,10 @@ dex-operator:
 generate:
   FROM +tools
   COPY . .
-  RUN controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..." \
-    && controller-gen rbac:roleName=dex-manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+  RUN controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
+  RUN controller-gen crd:generateEmbeddedObjectMeta=true rbac:roleName=dex-manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+  SAVE ARTIFACT ./api/zz_generated.deepcopy.go AS LOCAL api/zz_generated.deepcopy.go
+  SAVE ARTIFACT ./api/v1alpha1/zz_generated.deepcopy.go AS LOCAL api/v1alpha1/zz_generated.deepcopy.go
   SAVE ARTIFACT ./config/crd/bases AS LOCAL config/crd/bases
   SAVE ARTIFACT ./config/rbac/role.yaml AS LOCAL config/rbac/role.yaml
 

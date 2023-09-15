@@ -127,17 +127,6 @@ type DexIdentityProviderGRPCSpec struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-type DexIdentityProviderLocalStorageSpec struct {
-	// MountPath is the path at which the local storage will be mounted in the container.
-	MountPath string `json:"mountPath"`
-	// Size is the size of the persistent volume that will be
-	// used to store Dex's local sqlite database.
-	Size string `json:"size"`
-	// StorageClassName is the name of the storage class that will be
-	// used to provision the persistent volume.
-	StorageClassName *string `json:"storageClassName,omitempty"`
-}
-
 // DexIdentityProviderSpec defines the desired state of the Dex idP server.
 type DexIdentityProviderSpec struct {
 	// Image is the Dex IdP image to use.
@@ -169,9 +158,11 @@ type DexIdentityProviderSpec struct {
 	// Connectors holds configuration for connectors.
 	// +kubebuilder:validation:MinItems=1
 	Connectors []DexIdentityProviderConnectorSpec `json:"connectors"`
-	// LocalStorage configures local persistent storage for the Dex container.
-	// This is useful when using a SQLite database.
-	LocalStorage *DexIdentityProviderLocalStorageSpec `json:"localStorage,omitempty"`
+	// VolumeClaimTemplates are volume claim templates for the Dex identity provider pod.
+	// A volume claim template named "data" is recognized. If not specified a default
+	// volume claim template will be used. The "data" volume will be mounted at /var/lib/dex
+	// in the Dex identity provider container.
+	VolumeClaimTemplates []corev1.PersistentVolumeClaim `json:"volumeClaimTemplates,omitempty"`
 	// Resources allows specifying the resource requirements for the Dex identity provider container.
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
