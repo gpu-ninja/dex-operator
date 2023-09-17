@@ -4,23 +4,18 @@ metadata:
   name: dex-operator
   namespace: dex-operator
   labels:
-    control-plane: controller-manager
-    app.kubernetes.io/name: deployment
-    app.kubernetes.io/instance: dex-operator
-    app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: dex-operator
-    app.kubernetes.io/part-of: dex-operator
+    app.kubernetes.io/name: dex-operator
 spec:
   selector:
     matchLabels:
-      control-plane: controller-manager
+      app.kubernetes.io/name: dex-operator
   replicas: 1
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
-        control-plane: controller-manager
+        app.kubernetes.io/name: dex-operator
     spec:
       securityContext:
         runAsNonRoot: true
@@ -31,6 +26,11 @@ spec:
         - --leader-elect
         image: ghcr.io/gpu-ninja/dex-operator:latest
         name: manager
+        ports:
+        - name: metrics
+          containerPort: 8080
+        - name: healthz
+          containerPort: 8081
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
