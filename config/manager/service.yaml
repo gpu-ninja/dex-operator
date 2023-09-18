@@ -3,10 +3,12 @@ kind: Service
 metadata:
   name: dex-operator-metrics
   namespace: dex-operator
+  labels:
+    app.kubernetes.io/name: dex-operator
+    app.kubernetes.io/component: metrics
 spec:
   selector:
     app.kubernetes.io/name: dex-operator
-    app.kubernetes.io/component: metrics
   ports:
     - name: metrics
       protocol: TCP
