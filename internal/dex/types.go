@@ -33,6 +33,7 @@ type Config struct {
 	Expiry     *Expiry     `yaml:"expiry,omitempty"`
 	Logger     *Logger     `yaml:"logger,omitempty"`
 	Frontend   *Frontend   `yaml:"frontend,omitempty"`
+	Telemetry  *Telemetry  `yaml:"telemetry,omitempty"`
 	Connectors []Connector `yaml:"connectors"`
 }
 
@@ -155,6 +156,11 @@ type Logger struct {
 	Level string `yaml:"level,omitempty"`
 	// Format specifies the format to be used for logging.
 	Format string `yaml:"format,omitempty"`
+}
+
+// Telemetry is the config format for telemetry including the HTTP server config.
+type Telemetry struct {
+	HTTP string `json:"http"`
 }
 
 type RefreshToken struct {

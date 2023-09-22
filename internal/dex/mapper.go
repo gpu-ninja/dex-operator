@@ -35,39 +35,35 @@ const (
 )
 
 func ConfigFromCR(ctx context.Context, reader client.Reader, scheme *runtime.Scheme, idp *dexv1alpha1.DexIdentityProvider) (*Config, error) {
-	var webTLSCertFile, webTLSKeyFile string
-	if idp.Spec.Web.CertificateSecretRef != nil {
-		webTLSCertFile = filepath.Join(CertsBase, idp.Spec.Web.CertificateSecretRef.Name, "tls.crt")
-		webTLSKeyFile = filepath.Join(CertsBase, idp.Spec.Web.CertificateSecretRef.Name, "tls.key")
-	}
-
-	var grpcTLSCertFile, grpcTLSKeyFile string
-	if idp.Spec.GRPC.CertificateSecretRef != nil {
-		grpcTLSCertFile = filepath.Join(CertsBase, idp.Spec.GRPC.CertificateSecretRef.Name, "tls.crt")
-		grpcTLSKeyFile = filepath.Join(CertsBase, idp.Spec.GRPC.CertificateSecretRef.Name, "tls.key")
-	}
-
-	var grpcClientCAFile string
-	if idp.Spec.GRPC.ClientCASecretRef != nil {
-		grpcClientCAFile = filepath.Join(CertsBase, idp.Spec.GRPC.ClientCASecretRef.Name, "ca.crt")
-	}
-
 	c := &Config{
 		Issuer: idp.Spec.Issuer,
 		Web: Web{
-			HTTP:           idp.Spec.Web.HTTP,
-			HTTPS:          idp.Spec.Web.HTTPS,
-			TLSCert:        webTLSCertFile,
-			TLSKey:         webTLSKeyFile,
 			AllowedOrigins: idp.Spec.Web.AllowedOrigins,
 		},
 		GRPC: GRPC{
-			Addr:        idp.Spec.GRPC.Addr,
-			TLSCert:     grpcTLSCertFile,
-			TLSKey:      grpcTLSKeyFile,
-			TLSClientCA: grpcClientCAFile,
-			Reflection:  idp.Spec.GRPC.Reflection,
+			Addr:       ":8081",
+			Reflection: idp.Spec.GRPC.Reflection,
 		},
+		Telemetry: &Telemetry{
+			HTTP: ":9090",
+		},
+	}
+
+	if idp.Spec.Web.CertificateSecretRef != nil {
+		c.Web.HTTPS = ":8443"
+		c.Web.TLSCert = filepath.Join(CertsBase, idp.Spec.Web.CertificateSecretRef.Name, "tls.crt")
+		c.Web.TLSKey = filepath.Join(CertsBase, idp.Spec.Web.CertificateSecretRef.Name, "tls.key")
+	} else {
+		c.Web.HTTP = ":8080"
+	}
+
+	if idp.Spec.GRPC.CertificateSecretRef != nil {
+		c.GRPC.TLSCert = filepath.Join(CertsBase, idp.Spec.GRPC.CertificateSecretRef.Name, "tls.crt")
+		c.GRPC.TLSKey = filepath.Join(CertsBase, idp.Spec.GRPC.CertificateSecretRef.Name, "tls.key")
+	}
+
+	if idp.Spec.GRPC.ClientCASecretRef != nil {
+		c.GRPC.TLSClientCA = filepath.Join(CertsBase, idp.Spec.GRPC.ClientCASecretRef.Name, "ca.crt")
 	}
 
 	if idp.Spec.OAuth2 != nil {

@@ -72,10 +72,6 @@ type DexIdentityProviderExpirySpec struct {
 
 // DexIdentityProviderWebSpec holds configuration for the web server.
 type DexIdentityProviderWebSpec struct {
-	// HTTP is the address to bind HTTP server to.
-	HTTP string `json:"http,omitempty"`
-	// HTTPS is the address to bind HTTPS server to.
-	HTTPS string `json:"https,omitempty"`
 	// CertificateSecretRef is an optional reference to a secret containing the TLS certificate and key
 	// to use for HTTPS.
 	CertificateSecretRef *reference.LocalSecretReference `json:"certificateSecretRef,omitempty"`
@@ -114,8 +110,6 @@ type DexIdentityProviderLoggerSpec struct {
 
 // DexIdentityProviderGRPCSpec holds configuration for the gRPC server.
 type DexIdentityProviderGRPCSpec struct {
-	// Addr is the address to bind the gRPC server to.
-	Addr string `json:"addr"`
 	// CertificateSecretRef is an optional reference to a secret containing the TLS certificate and key
 	// to use for the gRPC server.
 	CertificateSecretRef *reference.LocalSecretReference `json:"certificateSecretRef,omitempty"`

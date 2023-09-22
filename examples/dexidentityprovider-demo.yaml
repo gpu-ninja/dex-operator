@@ -14,13 +14,11 @@ spec:
     sqlite3:
       file: /var/lib/dex/dex.db
   web:
-    https: ":8443"
     certificateSecretRef:
       name: demo-tls
     allowedOrigins:
     - https://dex.example.com
   grpc:
-    addr: ":8081"
     certificateSecretRef:
       name: demo-tls
     clientCASecretRef:

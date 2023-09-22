@@ -28,6 +28,7 @@ import (
 	fakeutils "github.com/gpu-ninja/operator-utils/fake"
 	"github.com/gpu-ninja/operator-utils/reference"
 	"github.com/gpu-ninja/operator-utils/zaplogr"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
@@ -57,6 +58,9 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 	err = appsv1.AddToScheme(scheme)
 	require.NoError(t, err)
 
+	err = monitoringv1.AddToScheme(scheme)
+	require.NoError(t, err)
+
 	err = dexv1alpha1.AddToScheme(scheme)
 	require.NoError(t, err)
 
@@ -66,18 +70,12 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: dexv1alpha1.DexIdentityProviderSpec{
-			Issuer: "http://127.0.0.1:5556/dex",
+			Issuer: "http://127.0.0.1:8080/dex",
 			Storage: dexv1alpha1.DexIdentityProviderStorageSpec{
 				Type: dexv1alpha1.DexIdentityProviderStorageTypeSqlite3,
 				Sqlite3: &dexv1alpha1.DexIdentityProviderStorageSqlite3Spec{
 					File: "var/sqlite/dex.db",
 				},
-			},
-			Web: dexv1alpha1.DexIdentityProviderWebSpec{
-				HTTP: "127.0.0.1:5556",
-			},
-			GRPC: dexv1alpha1.DexIdentityProviderGRPCSpec{
-				Addr: "127.0.0.1:5557",
 			},
 			Connectors: []dexv1alpha1.DexIdentityProviderConnectorSpec{
 				{
@@ -220,6 +218,20 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 			Name:      "dex-" + idp.Name + "-api",
 			Namespace: idp.Namespace,
 		}, &apiService)
+		require.NoError(t, err)
+
+		var metricsService corev1.Service
+		err = r.Client.Get(ctx, types.NamespacedName{
+			Name:      "dex-" + idp.Name + "-metrics",
+			Namespace: idp.Namespace,
+		}, &metricsService)
+		require.NoError(t, err)
+
+		var serviceMonitor monitoringv1.ServiceMonitor
+		err = r.Client.Get(ctx, types.NamespacedName{
+			Name:      "dex-" + idp.Name,
+			Namespace: idp.Namespace,
+		}, &serviceMonitor)
 		require.NoError(t, err)
 
 		var sts appsv1.StatefulSet

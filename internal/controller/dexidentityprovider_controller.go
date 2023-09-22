@@ -20,16 +20,15 @@ package controller
 import (
 	"context"
 	"fmt"
-	"net"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"time"
 
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
 	"github.com/gpu-ninja/dex-operator/internal/dex"
 	"github.com/gpu-ninja/operator-utils/updater"
 	"github.com/gpu-ninja/operator-utils/zaplogr"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
@@ -206,8 +205,6 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile statefulset: %w", err)
 	}
 
-	logger.Info("Statefulset successfully reconciled")
-
 	logger.Info("Reconciling web service")
 
 	webSvc, err := r.webServiceTemplate(&idp)
@@ -231,8 +228,6 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile web service: %w", err)
 	}
 
-	logger.Info("Web service successfully reconciled")
-
 	logger.Info("Reconciling API Service")
 
 	apiSvc, err := r.apiServiceTemplate(&idp)
@@ -255,6 +250,54 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile api service: %w", err)
 	}
+
+	logger.Info("Reconciling metrics service")
+
+	metricsSvc, err := r.metricsServiceTemplate(&idp)
+	if err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to generate metrics service template: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to generate metrics service template: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to generate metrics service template: %w", err)
+	}
+
+	if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, metricsSvc); err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to reconcile metrics service: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to reconcile metrics service: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile metrics service: %w", err)
+	}
+
+	logger.Info("Reconciling service monitor")
+
+	svcMonitor, err := r.serviceMonitorTemplate(&idp)
+	if err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to generate service monitor template: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to generate service monitor template: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to generate service monitor template: %w", err)
+	}
+
+	if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, svcMonitor); err != nil {
+		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+			"Failed", "Failed to reconcile service monitor: %s", err)
+
+		r.markFailed(ctx, &idp,
+			fmt.Errorf("failed to reconcile service monitor: %w", err))
+
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile service monitor: %w", err)
+	}
+
+	logger.Info("Checking if statefulset is ready")
 
 	ready, err := r.isStatefulSetReady(ctx, &idp)
 	if err != nil {
@@ -551,20 +594,18 @@ func (r *DexIdentityProviderReconciler) isStatefulSetReady(ctx context.Context, 
 func (r *DexIdentityProviderReconciler) webServiceTemplate(idp *dexv1alpha1.DexIdentityProvider) (*corev1.Service, error) {
 	var ports []corev1.ServicePort
 
-	if idp.Spec.Web.HTTP != "" {
-		ports = append(ports, corev1.ServicePort{
-			Name:       "http",
-			Port:       int32(80),
-			TargetPort: intstr.FromString("http"),
-		})
-	}
-
-	if idp.Spec.Web.HTTPS != "" {
-		ports = append(ports, corev1.ServicePort{
+	if idp.Spec.Web.CertificateSecretRef != nil {
+		ports = []corev1.ServicePort{{
 			Name:       "https",
 			Port:       int32(443),
 			TargetPort: intstr.FromString("https"),
-		})
+		}}
+	} else {
+		ports = []corev1.ServicePort{{
+			Name:       "http",
+			Port:       int32(80),
+			TargetPort: intstr.FromString("http"),
+		}}
 	}
 
 	svc := corev1.Service{
@@ -644,6 +685,92 @@ func (r *DexIdentityProviderReconciler) apiServiceTemplate(idp *dexv1alpha1.DexI
 	svc.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
 
 	return &svc, nil
+}
+
+func (r *DexIdentityProviderReconciler) metricsServiceTemplate(idp *dexv1alpha1.DexIdentityProvider) (*corev1.Service, error) {
+	svc := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        fmt.Sprintf("dex-%s-metrics", idp.Name),
+			Namespace:   idp.Namespace,
+			Labels:      make(map[string]string),
+			Annotations: idp.Spec.GRPC.Annotations,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"app.kubernetes.io/name":     "dex",
+				"app.kubernetes.io/instance": idp.Name,
+			},
+			Ports: []corev1.ServicePort{{
+				Name:       "metrics",
+				Port:       9090,
+				TargetPort: intstr.FromString("metrics"),
+			}},
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(idp, &svc, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	for k, v := range idp.ObjectMeta.Labels {
+		svc.ObjectMeta.Labels[k] = v
+	}
+
+	svc.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
+	if err := controllerutil.SetControllerReference(idp, &svc, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	for k, v := range idp.ObjectMeta.Labels {
+		svc.ObjectMeta.Labels[k] = v
+	}
+
+	svc.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
+	svc.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
+	svc.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
+	svc.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
+	svc.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
+	svc.ObjectMeta.Labels["app.kubernetes.io/component"] = "metrics"
+
+	return &svc, nil
+}
+
+func (r *DexIdentityProviderReconciler) serviceMonitorTemplate(idp *dexv1alpha1.DexIdentityProvider) (*monitoringv1.ServiceMonitor, error) {
+	svcMonitor := monitoringv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("dex-%s", idp.Name),
+			Namespace: idp.Namespace,
+			Labels:    make(map[string]string),
+		},
+		Spec: monitoringv1.ServiceMonitorSpec{
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app.kubernetes.io/name":      "dex",
+					"app.kubernetes.io/instance":  idp.Name,
+					"app.kubernetes.io/component": "metrics",
+				},
+			},
+			Endpoints: []monitoringv1.Endpoint{{
+				Port:     "metrics",
+				Interval: "30s",
+			}},
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(idp, &svcMonitor, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	for k, v := range idp.ObjectMeta.Labels {
+		svcMonitor.ObjectMeta.Labels[k] = v
+	}
+
+	svcMonitor.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
+	svcMonitor.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
+	svcMonitor.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
+	svcMonitor.ObjectMeta.Labels["app.kubernetes.io/component"] = "metrics"
+
+	return &svcMonitor, nil
 }
 
 func (r *DexIdentityProviderReconciler) configSecretTemplate(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) (*corev1.Secret, error) {
@@ -786,59 +913,32 @@ func getDexCertificateVolumes(idp *dexv1alpha1.DexIdentityProvider) ([]corev1.Vo
 }
 
 func getDexPorts(idp *dexv1alpha1.DexIdentityProvider) ([]corev1.ContainerPort, error) {
-	var ports []corev1.ContainerPort
-
-	if idp.Spec.Web.HTTP != "" {
-		_, httpPortString, err := net.SplitHostPort(idp.Spec.Web.HTTP)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse http address: %w", err)
-		}
-
-		httpPort, err := strconv.Atoi(httpPortString)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse http port: %w", err)
-		}
-
-		ports = append(ports, corev1.ContainerPort{
-			Name:          "http",
-			ContainerPort: int32(httpPort),
+	ports := []corev1.ContainerPort{
+		{
+			Name:          "grpc",
+			ContainerPort: 8081,
 			Protocol:      corev1.ProtocolTCP,
-		})
+		},
+		{
+			Name:          "metrics",
+			ContainerPort: 9090,
+			Protocol:      corev1.ProtocolTCP,
+		},
 	}
 
-	if idp.Spec.Web.HTTPS != "" {
-		_, httpsPortString, err := net.SplitHostPort(idp.Spec.Web.HTTPS)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse https address: %w", err)
-		}
-
-		httpsPort, err := strconv.Atoi(httpsPortString)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse https port: %w", err)
-		}
-
+	if idp.Spec.Web.CertificateSecretRef != nil {
 		ports = append(ports, corev1.ContainerPort{
 			Name:          "https",
-			ContainerPort: int32(httpsPort),
+			ContainerPort: 8443,
+			Protocol:      corev1.ProtocolTCP,
+		})
+	} else {
+		ports = append(ports, corev1.ContainerPort{
+			Name:          "http",
+			ContainerPort: 8080,
 			Protocol:      corev1.ProtocolTCP,
 		})
 	}
-
-	_, grpcPortString, err := net.SplitHostPort(idp.Spec.GRPC.Addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse grpc address: %w", err)
-	}
-
-	grpcPort, err := strconv.Atoi(grpcPortString)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse grpc port: %w", err)
-	}
-
-	ports = append(ports, corev1.ContainerPort{
-		Name:          "grpc",
-		ContainerPort: int32(grpcPort),
-		Protocol:      corev1.ProtocolTCP,
-	})
 
 	return ports, nil
 }

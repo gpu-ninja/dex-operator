@@ -28,7 +28,9 @@ clean_up() {
   k3d cluster delete "${CLUSTER_NAME}" || true
 }
 
-trap clean_up EXIT
+if [ -z "${NO_CLEANUP:-}" ]; then
+  trap clean_up EXIT
+fi
 
 if [ -z "${SKIP_BUILD:-}" ]; then
   echo 'Building operator image'

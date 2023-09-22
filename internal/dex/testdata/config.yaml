@@ -1,12 +1,14 @@
-issuer: http://127.0.0.1:5556/dex
+issuer: http://127.0.0.1:8080/dex
 storage:
     type: sqlite3
     config:
         file: var/sqlite/dex.db
 web:
-    http: 127.0.0.1:5556
+    http: ":8080"
 grpc:
-    addr: 127.0.0.1:5557
+    addr: ":8081"
+telemetry:
+    http: ":9090"
 connectors:
     - type: ldap
       name: LDAP

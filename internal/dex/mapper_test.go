@@ -48,18 +48,12 @@ func TestConfigFromCR(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: dexv1alpha1.DexIdentityProviderSpec{
-			Issuer: "http://127.0.0.1:5556/dex",
+			Issuer: "http://127.0.0.1:8080/dex",
 			Storage: dexv1alpha1.DexIdentityProviderStorageSpec{
 				Type: dexv1alpha1.DexIdentityProviderStorageTypeSqlite3,
 				Sqlite3: &dexv1alpha1.DexIdentityProviderStorageSqlite3Spec{
 					File: "var/sqlite/dex.db",
 				},
-			},
-			Web: dexv1alpha1.DexIdentityProviderWebSpec{
-				HTTP: "127.0.0.1:5556",
-			},
-			GRPC: dexv1alpha1.DexIdentityProviderGRPCSpec{
-				Addr: "127.0.0.1:5557",
 			},
 			Connectors: []dexv1alpha1.DexIdentityProviderConnectorSpec{
 				{

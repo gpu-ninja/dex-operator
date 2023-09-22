@@ -434,9 +434,6 @@ spec:
               grpc:
                 description: GRPC holds configuration for the gRPC server.
                 properties:
-                  addr:
-                    description: Addr is the address to bind the gRPC server to.
-                    type: string
                   annotations:
                     additionalProperties:
                       type: string
@@ -467,8 +464,6 @@ spec:
                   reflection:
                     description: Reflection enables gRPC server reflection.
                     type: boolean
-                required:
-                - addr
                 type: object
               image:
                 description: Image is the Dex IdP image to use.
@@ -1044,12 +1039,6 @@ spec:
                     required:
                     - name
                     type: object
-                  http:
-                    description: HTTP is the address to bind HTTP server to.
-                    type: string
-                  https:
-                    description: HTTPS is the address to bind HTTPS server to.
-                    type: string
                 type: object
             required:
             - connectors
