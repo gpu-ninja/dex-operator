@@ -52,9 +52,10 @@ import (
 // Need to be able to read secrets to get password refs, and store dex config.
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
-// Need to be able to manage statefulsets and services.
+// Need to be able to manage statefulsets, services, and service monitors.
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
 //+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders/status,verbs=get;update;patch
