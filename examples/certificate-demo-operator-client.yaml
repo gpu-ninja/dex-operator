@@ -3,7 +3,7 @@ kind: Certificate
 metadata:
   name: demo-operator-client
   labels:
-    app.kubernetes.io/component: server
+    app.kubernetes.io/component: provider
 spec:
   secretName: demo-operator-client-tls
   issuerRef:

@@ -3,7 +3,7 @@ kind: Certificate
 metadata:
   name: demo-api-ca
   labels:
-    app.kubernetes.io/component: server
+    app.kubernetes.io/component: provider
 spec:
   secretName: demo-api-ca-tls
   issuerRef:
@@ -16,7 +16,7 @@ kind: Issuer
 metadata:
   name: demo-api-ca
   labels:
-    app.kubernetes.io/component: server
+    app.kubernetes.io/component: provider
 spec:
   ca:
     secretName: demo-api-ca-tls

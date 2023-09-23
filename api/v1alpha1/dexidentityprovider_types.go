@@ -29,6 +29,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// Duration is a valid time duration that can be parsed by Prometheus model.ParseDuration() function.
+// Supported units: y, w, d, h, m, s, ms
+// Examples: `30s`, `1m`, `1h20m15s`, `15d`
+// +kubebuilder:validation:Pattern:="^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$"
+type Duration string
+
 // DexIdentityProviderOAuth2Spec holds configuration for OAuth2.
 type DexIdentityProviderOAuth2Spec struct {
 	// GrantTypes is a list of allowed grant types, defaults to all supported types.
@@ -108,6 +114,15 @@ type DexIdentityProviderLoggerSpec struct {
 	Format string `json:"format,omitempty"`
 }
 
+// DexIdentityProviderMetricsSpec holds configuration for metrics.
+type DexIdentityProviderMetricsSpec struct {
+	// Enabled enables Prometheus metric scraping.
+	Enabled bool `json:"enabled,omitempty"`
+	// Interval at which metrics should be scraped
+	// If not specified Prometheus' global scrape interval is used.
+	Interval Duration `json:"interval,omitempty"`
+}
+
 // DexIdentityProviderGRPCSpec holds configuration for the gRPC server.
 type DexIdentityProviderGRPCSpec struct {
 	// CertificateSecretRef is an optional reference to a secret containing the TLS certificate and key
@@ -149,13 +164,14 @@ type DexIdentityProviderSpec struct {
 	Frontend *DexIdentityProviderFrontendSpec `json:"frontend,omitempty"`
 	// Logger holds configuration required to customize logging for dex.
 	Logger *DexIdentityProviderLoggerSpec `json:"logger,omitempty"`
+	// Metrics holds configuration for metrics.
+	Metrics *DexIdentityProviderMetricsSpec `json:"metrics,omitempty"`
 	// Connectors holds configuration for connectors.
 	// +kubebuilder:validation:MinItems=1
 	Connectors []DexIdentityProviderConnectorSpec `json:"connectors"`
+	// VolumeMounts are volume mounts for the Dex identity provider container.
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 	// VolumeClaimTemplates are volume claim templates for the Dex identity provider pod.
-	// A volume claim template named "data" is recognized. If not specified a default
-	// volume claim template will be used. The "data" volume will be mounted at /var/lib/dex
-	// in the Dex identity provider container.
 	VolumeClaimTemplates []corev1.PersistentVolumeClaim `json:"volumeClaimTemplates,omitempty"`
 	// Resources allows specifying the resource requirements for the Dex identity provider container.
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`

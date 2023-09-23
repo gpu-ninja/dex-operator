@@ -77,6 +77,9 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 					File: "var/sqlite/dex.db",
 				},
 			},
+			Metrics: &dexv1alpha1.DexIdentityProviderMetricsSpec{
+				Enabled: true,
+			},
 			Connectors: []dexv1alpha1.DexIdentityProviderConnectorSpec{
 				{
 					Type: dexv1alpha1.DexIdentityProviderConnectorTypeLDAP,
@@ -113,6 +116,12 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 							NameAttr: "name",
 						},
 					},
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "data",
+					MountPath: "/var/lib/dex",
 				},
 			},
 			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{

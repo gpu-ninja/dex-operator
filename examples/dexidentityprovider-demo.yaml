@@ -3,7 +3,7 @@ apiVersion: dex.gpu-ninja.com/v1alpha1
 metadata:
   name: demo
   labels:
-    app.kubernetes.io/component: server
+    app.kubernetes.io/component: provider
 spec:
   image: dexidp/dex:v2.37.0
   clientCertificateSecretRef:
@@ -24,6 +24,9 @@ spec:
     clientCASecretRef:
       name: demo-api-ca-tls
     reflection: true
+  metrics:
+    enabled: true
+    interval: 30s
   connectors:
   - type: ldap
     name: LDAP
@@ -50,6 +53,9 @@ spec:
         userMatchers:
         - userAttr: uid
           groupAttr: member
+  volumeMounts:
+  - name: data
+    mountPath: /var/lib/dex
   volumeClaimTemplates:
   - metadata:
       name: data

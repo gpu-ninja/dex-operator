@@ -33,9 +33,8 @@ import (
 	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -83,7 +82,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 
 	var idp dexv1alpha1.DexIdentityProvider
 	if err := r.Get(ctx, req.NamespacedName, &idp); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 
@@ -114,7 +113,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 				},
 			}
 
-			if err := r.Client.Delete(ctx, &referencedClient); err != nil && !errors.IsNotFound(err) {
+			if err := r.Client.Delete(ctx, &referencedClient); err != nil && !apierrors.IsNotFound(err) {
 				// Don't block deletion.
 				logger.Error("Failed to cleanup referenced client, skipping deletion", zap.Error(err))
 			}
@@ -275,27 +274,62 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile metrics service: %w", err)
 	}
 
-	logger.Info("Reconciling service monitor")
+	if idp.Spec.Metrics != nil && idp.Spec.Metrics.Enabled {
+		logger.Info("Reconciling service monitor")
 
-	svcMonitor, err := r.serviceMonitorTemplate(&idp)
-	if err != nil {
-		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to generate service monitor template: %s", err)
+		svcMonitor, err := r.serviceMonitorTemplate(&idp)
+		if err != nil {
+			r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+				"Failed", "Failed to generate service monitor template: %s", err)
 
-		r.markFailed(ctx, &idp,
-			fmt.Errorf("failed to generate service monitor template: %w", err))
+			r.markFailed(ctx, &idp,
+				fmt.Errorf("failed to generate service monitor template: %w", err))
 
-		return ctrl.Result{}, fmt.Errorf("failed to generate service monitor template: %w", err)
-	}
+			return ctrl.Result{}, fmt.Errorf("failed to generate service monitor template: %w", err)
+		}
 
-	if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, svcMonitor); err != nil {
-		r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
-			"Failed", "Failed to reconcile service monitor: %s", err)
+		if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, svcMonitor); err != nil {
+			r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+				"Failed", "Failed to reconcile service monitor: %s", err)
 
-		r.markFailed(ctx, &idp,
-			fmt.Errorf("failed to reconcile service monitor: %w", err))
+			r.markFailed(ctx, &idp,
+				fmt.Errorf("failed to reconcile service monitor: %w", err))
 
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile service monitor: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile service monitor: %w", err)
+		}
+	} else {
+		svcMonitor := monitoringv1.ServiceMonitor{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dex-" + idp.Name,
+				Namespace: idp.Namespace,
+			},
+		}
+
+		if err := r.Get(ctx, client.ObjectKeyFromObject(&svcMonitor), &svcMonitor); err != nil {
+			if !apierrors.IsNotFound(err) {
+				r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+					"Failed", "Failed to get service monitor: %s", err)
+
+				r.markFailed(ctx, &idp,
+					fmt.Errorf("failed to get service monitor: %w", err))
+
+				return ctrl.Result{}, fmt.Errorf("failed to get service monitor: %w", err)
+			}
+
+			// Not found, nothing to do.
+		} else {
+			logger.Info("Deleting service monitor")
+
+			if err := r.Delete(ctx, &svcMonitor); err != nil {
+				r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+					"Failed", "Failed to delete service monitor: %s", err)
+
+				r.markFailed(ctx, &idp,
+					fmt.Errorf("failed to delete service monitor: %w", err))
+
+				return ctrl.Result{}, fmt.Errorf("failed to delete service monitor: %w", err)
+			}
+		}
 	}
 
 	logger.Info("Checking if statefulset is ready")
@@ -434,41 +468,9 @@ func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.Dex
 		MountPath: "/etc/dex/config.yaml",
 		SubPath:   "config.yaml",
 		ReadOnly:  true,
-	}, corev1.VolumeMount{
-		Name:      "data",
-		MountPath: "/var/lib/dex",
 	})
 
-	volumeClaimTemplates := []corev1.PersistentVolumeClaim{{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "data",
-		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteOnce,
-			},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("100Mi"),
-				},
-			},
-		},
-	}}
-
-	for _, volumeClaimTemplate := range idp.Spec.VolumeClaimTemplates {
-		var found bool
-		for i, existingVolumeClaimTemplate := range volumeClaimTemplates {
-			if existingVolumeClaimTemplate.Name == volumeClaimTemplate.Name {
-				volumeClaimTemplates[i] = volumeClaimTemplate
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			volumeClaimTemplates = append(volumeClaimTemplates, volumeClaimTemplate)
-		}
-	}
+	volumeMounts = append(volumeMounts, idp.Spec.VolumeMounts...)
 
 	ports, err := getDexPorts(idp)
 	if err != nil {
@@ -558,7 +560,7 @@ func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.Dex
 					Volumes: volumes,
 				},
 			},
-			VolumeClaimTemplates: volumeClaimTemplates,
+			VolumeClaimTemplates: idp.Spec.VolumeClaimTemplates,
 		},
 	}
 
@@ -753,7 +755,7 @@ func (r *DexIdentityProviderReconciler) serviceMonitorTemplate(idp *dexv1alpha1.
 			},
 			Endpoints: []monitoringv1.Endpoint{{
 				Port:     "metrics",
-				Interval: "30s",
+				Interval: monitoringv1.Duration(idp.Spec.Metrics.Interval),
 			}},
 		},
 	}

@@ -484,6 +484,18 @@ spec:
                     description: Level sets logging level severity.
                     type: string
                 type: object
+              metrics:
+                description: Metrics holds configuration for metrics.
+                properties:
+                  enabled:
+                    description: Enabled enables Prometheus metric scraping.
+                    type: boolean
+                  interval:
+                    description: Interval at which metrics should be scraped If not
+                      specified Prometheus' global scrape interval is used.
+                    pattern: ^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$
+                    type: string
+                type: object
               oauth2:
                 description: OAuth2 holds configuration for OAuth2.
                 properties:
@@ -670,10 +682,7 @@ spec:
                 type: object
               volumeClaimTemplates:
                 description: VolumeClaimTemplates are volume claim templates for the
-                  Dex identity provider pod. A volume claim template named "data"
-                  is recognized. If not specified a default volume claim template
-                  will be used. The "data" volume will be mounted at /var/lib/dex
-                  in the Dex identity provider container.
+                  Dex identity provider pod.
                 items:
                   description: PersistentVolumeClaim is a user's request for and claim
                     to a persistent volume
@@ -1061,6 +1070,46 @@ spec:
                           description: phase represents the current phase of PersistentVolumeClaim.
                           type: string
                       type: object
+                  type: object
+                type: array
+              volumeMounts:
+                description: VolumeMounts are volume mounts for the Dex identity provider
+                  container.
+                items:
+                  description: VolumeMount describes a mounting of a Volume within
+                    a container.
+                  properties:
+                    mountPath:
+                      description: Path within the container at which the volume should
+                        be mounted.  Must not contain ':'.
+                      type: string
+                    mountPropagation:
+                      description: mountPropagation determines how mounts are propagated
+                        from the host to container and the other way around. When
+                        not set, MountPropagationNone is used. This field is beta
+                        in 1.10.
+                      type: string
+                    name:
+                      description: This must match the Name of a Volume.
+                      type: string
+                    readOnly:
+                      description: Mounted read-only if true, read-write otherwise
+                        (false or unspecified). Defaults to false.
+                      type: boolean
+                    subPath:
+                      description: Path within the volume from which the container's
+                        volume should be mounted. Defaults to "" (volume's root).
+                      type: string
+                    subPathExpr:
+                      description: Expanded path within the volume from which the
+                        container's volume should be mounted. Behaves similarly to
+                        SubPath but environment variable references $(VAR_NAME) are
+                        expanded using the container's environment. Defaults to ""
+                        (volume's root). SubPathExpr and SubPath are mutually exclusive.
+                      type: string
+                  required:
+                  - mountPath
+                  - name
                   type: object
                 type: array
               web:
