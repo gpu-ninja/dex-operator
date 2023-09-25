@@ -43,13 +43,15 @@ kapp deploy -y -a cert-manager -f "https://github.com/cert-manager/cert-manager/
 kapp deploy -a dex-operator -f https://github.com/gpu-ninja/dex-operator/releases/latest/download/dex-operator.yaml
 ```
 
-### Starting an Identity Provider
+### Custom Resources
+
+#### Start an Identity Provider
 
 ```shell
 kubectl apply -f examples -l app.kubernetes.io/component=provider
 ```
 
-### Creating an OAuth2 Client
+#### Create an OAuth2 Client
 
 ```shell
 kubectl apply -f examples -l app.kubernetes.io/component=client
