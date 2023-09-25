@@ -40,7 +40,7 @@ kapp deploy -y -a cert-manager -f "https://github.com/cert-manager/cert-manager/
 #### Operator
 
 ```shell
-kapp deploy -a dex-operator -f https://github.com/gpu-ninja/dex-operator/releases/latest/download/dex-operator.yaml
+kapp deploy -y -a dex-operator -f https://github.com/gpu-ninja/dex-operator/releases/latest/download/dex-operator.yaml
 ```
 
 ### Custom Resources
