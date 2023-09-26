@@ -277,7 +277,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 	if idp.Spec.Metrics != nil && idp.Spec.Metrics.Enabled {
 		logger.Info("Reconciling service monitor")
 
-		svcMonitor, err := r.serviceMonitorTemplate(&idp)
+		sm, err := r.serviceMonitorTemplate(&idp)
 		if err != nil {
 			r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
 				"Failed", "Failed to generate service monitor template: %s", err)
@@ -288,7 +288,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 			return ctrl.Result{}, fmt.Errorf("failed to generate service monitor template: %w", err)
 		}
 
-		if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, svcMonitor); err != nil {
+		if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, sm); err != nil {
 			r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
 				"Failed", "Failed to reconcile service monitor: %s", err)
 
@@ -298,14 +298,14 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile service monitor: %w", err)
 		}
 	} else {
-		svcMonitor := monitoringv1.ServiceMonitor{
+		sm := monitoringv1.ServiceMonitor{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "dex-" + idp.Name,
 				Namespace: idp.Namespace,
 			},
 		}
 
-		if err := r.Get(ctx, client.ObjectKeyFromObject(&svcMonitor), &svcMonitor); err != nil {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(&sm), &sm); err != nil {
 			if !apierrors.IsNotFound(err) {
 				r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
 					"Failed", "Failed to get service monitor: %s", err)
@@ -320,7 +320,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		} else {
 			logger.Info("Deleting service monitor")
 
-			if err := r.Delete(ctx, &svcMonitor); err != nil {
+			if err := r.Delete(ctx, &sm); err != nil {
 				r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
 					"Failed", "Failed to delete service monitor: %s", err)
 
@@ -693,10 +693,9 @@ func (r *DexIdentityProviderReconciler) apiServiceTemplate(idp *dexv1alpha1.DexI
 func (r *DexIdentityProviderReconciler) metricsServiceTemplate(idp *dexv1alpha1.DexIdentityProvider) (*corev1.Service, error) {
 	svc := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        fmt.Sprintf("dex-%s-metrics", idp.Name),
-			Namespace:   idp.Namespace,
-			Labels:      make(map[string]string),
-			Annotations: idp.Spec.GRPC.Annotations,
+			Name:      fmt.Sprintf("dex-%s-metrics", idp.Name),
+			Namespace: idp.Namespace,
+			Labels:    make(map[string]string),
 		},
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{
@@ -720,17 +719,6 @@ func (r *DexIdentityProviderReconciler) metricsServiceTemplate(idp *dexv1alpha1.
 	}
 
 	svc.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
-	if err := controllerutil.SetControllerReference(idp, &svc, r.Scheme); err != nil {
-		return nil, fmt.Errorf("failed to set controller reference: %w", err)
-	}
-
-	for k, v := range idp.ObjectMeta.Labels {
-		svc.ObjectMeta.Labels[k] = v
-	}
-
-	svc.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
-	svc.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
-	svc.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
 	svc.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
 	svc.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
 	svc.ObjectMeta.Labels["app.kubernetes.io/component"] = "metrics"
@@ -739,9 +727,9 @@ func (r *DexIdentityProviderReconciler) metricsServiceTemplate(idp *dexv1alpha1.
 }
 
 func (r *DexIdentityProviderReconciler) serviceMonitorTemplate(idp *dexv1alpha1.DexIdentityProvider) (*monitoringv1.ServiceMonitor, error) {
-	svcMonitor := monitoringv1.ServiceMonitor{
+	sm := monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("dex-%s", idp.Name),
+			Name:      "dex-" + idp.Name,
 			Namespace: idp.Namespace,
 			Labels:    make(map[string]string),
 		},
@@ -760,20 +748,20 @@ func (r *DexIdentityProviderReconciler) serviceMonitorTemplate(idp *dexv1alpha1.
 		},
 	}
 
-	if err := controllerutil.SetControllerReference(idp, &svcMonitor, r.Scheme); err != nil {
+	if err := controllerutil.SetControllerReference(idp, &sm, r.Scheme); err != nil {
 		return nil, fmt.Errorf("failed to set controller reference: %w", err)
 	}
 
 	for k, v := range idp.ObjectMeta.Labels {
-		svcMonitor.ObjectMeta.Labels[k] = v
+		sm.ObjectMeta.Labels[k] = v
 	}
 
-	svcMonitor.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
-	svcMonitor.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
-	svcMonitor.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
-	svcMonitor.ObjectMeta.Labels["app.kubernetes.io/component"] = "metrics"
+	sm.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
+	sm.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
+	sm.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
+	sm.ObjectMeta.Labels["app.kubernetes.io/component"] = "metrics"
 
-	return &svcMonitor, nil
+	return &sm, nil
 }
 
 func (r *DexIdentityProviderReconciler) configSecretTemplate(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) (*corev1.Secret, error) {
