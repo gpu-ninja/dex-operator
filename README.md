@@ -15,7 +15,7 @@ not listed here, please open an issue or submit a PR!
 
 ### Connectors
 
-* Static Passwords
+* Static Users/Passwords
 * [LDAP](https://dexidp.io/docs/connectors/ldap/)
 * [OpenID Connect (OIDC)](https://dexidp.io/docs/connectors/oidc/)
 
@@ -52,14 +52,14 @@ kapp deploy -y -a dex-operator -f https://github.com/gpu-ninja/dex-operator/rele
 kubectl apply -f examples -l app.kubernetes.io/component=provider
 ```
 
+#### Create a User
+
+```shell
+kubectl apply -f examples/dexuser-demo.yaml
+```
+
 #### Create an OAuth2 Client
 
 ```shell
-kubectl apply -f examples -l app.kubernetes.io/component=client
-```
-
-#### Create a Static User
-
-```shell
-kubectl apply -f examples -l app.kubernetes.io/component=user
+kubectl apply -f examples/dexoauth2client-demo.yaml
 ```

@@ -2,8 +2,6 @@ kind: DexOAuth2Client
 apiVersion: dex.gpu-ninja.com/v1alpha1
 metadata:
   name: demo
-  labels:
-    app.kubernetes.io/component: client
 spec:
   identityProviderRef:
     name: demo
