@@ -131,7 +131,7 @@ func TestDexUserReconciler(t *testing.T) {
 
 		require.Len(t, eventRecorder.Events, 1)
 		event := <-eventRecorder.Events
-		assert.Equal(t, "Normal Reconciled Successfully created or updated", event)
+		assert.Equal(t, "Normal Ready Successfully created or updated", event)
 
 		updatedUser := user.DeepCopy()
 		err = subResourceClient.Get(ctx, user, updatedUser)
@@ -181,7 +181,7 @@ func TestDexUserReconciler(t *testing.T) {
 		require.Len(t, eventRecorder.Events, 1)
 		event = <-eventRecorder.Events
 
-		assert.Equal(t, "Normal Reconciled Successfully created or updated", event)
+		assert.Equal(t, "Normal Ready Successfully created or updated", event)
 
 		updatedUser = user.DeepCopy()
 		err = subResourceClient.Get(ctx, user, updatedUser)

@@ -328,7 +328,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	if oauth2Client.Status.Phase != dexv1alpha1.DexOAuth2ClientPhaseReady {
 		r.Recorder.Event(&oauth2Client, corev1.EventTypeNormal,
-			"Reconciled", "Successfully created or updated")
+			"Ready", "Successfully created or updated")
 
 		if err := r.markReady(ctx, &oauth2Client); err != nil {
 			return ctrl.Result{}, err

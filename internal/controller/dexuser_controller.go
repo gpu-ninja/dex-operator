@@ -388,7 +388,7 @@ func (r *DexUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	if user.Status.Phase != dexv1alpha1.DexUserPhaseReady {
 		r.Recorder.Event(&user, corev1.EventTypeNormal,
-			"Reconciled", "Successfully created or updated")
+			"Ready", "Successfully created or updated")
 
 		if err := r.markReady(ctx, &user); err != nil {
 			return ctrl.Result{}, err
