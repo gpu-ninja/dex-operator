@@ -47,6 +47,7 @@ func ConfigFromCR(ctx context.Context, reader client.Reader, scheme *runtime.Sch
 		Telemetry: &Telemetry{
 			HTTP: ":9090",
 		},
+		EnablePasswordDB: true,
 	}
 
 	if idp.Spec.Web.CertificateSecretRef != nil {

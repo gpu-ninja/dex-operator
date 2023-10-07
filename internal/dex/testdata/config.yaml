@@ -9,6 +9,7 @@ grpc:
     addr: ":8081"
 telemetry:
     http: ":9090"
+enablePasswordDB: true
 connectors:
     - type: ldap
       name: LDAP

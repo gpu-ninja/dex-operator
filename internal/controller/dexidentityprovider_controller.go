@@ -376,6 +376,7 @@ func (r *DexIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Secret{}).
+		Owns(&monitoringv1.ServiceMonitor{}).
 		Complete(r)
 }
 

@@ -365,7 +365,6 @@ spec:
                   - name
                   - type
                   type: object
-                minItems: 1
                 type: array
               expiry:
                 description: Expiry holds configuration for tokens, signing keys,
@@ -1139,7 +1138,6 @@ spec:
                     type: object
                 type: object
             required:
-            - connectors
             - grpc
             - image
             - issuer

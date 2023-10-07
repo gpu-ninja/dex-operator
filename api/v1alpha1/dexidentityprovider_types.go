@@ -167,8 +167,7 @@ type DexIdentityProviderSpec struct {
 	// Metrics holds configuration for metrics.
 	Metrics *DexIdentityProviderMetricsSpec `json:"metrics,omitempty"`
 	// Connectors holds configuration for connectors.
-	// +kubebuilder:validation:MinItems=1
-	Connectors []DexIdentityProviderConnectorSpec `json:"connectors"`
+	Connectors []DexIdentityProviderConnectorSpec `json:"connectors,omitempty"`
 	// VolumeMounts are volume mounts for the Dex identity provider container.
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 	// VolumeClaimTemplates are volume claim templates for the Dex identity provider pod.

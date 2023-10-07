@@ -25,16 +25,17 @@ import (
 
 // Config is the config format for the main application.
 type Config struct {
-	Issuer     string      `yaml:"issuer"`
-	Storage    Storage     `yaml:"storage"`
-	Web        Web         `yaml:"web"`
-	GRPC       GRPC        `yaml:"grpc"`
-	OAuth2     *OAuth2     `yaml:"oauth2,omitempty"`
-	Expiry     *Expiry     `yaml:"expiry,omitempty"`
-	Logger     *Logger     `yaml:"logger,omitempty"`
-	Frontend   *Frontend   `yaml:"frontend,omitempty"`
-	Telemetry  *Telemetry  `yaml:"telemetry,omitempty"`
-	Connectors []Connector `yaml:"connectors"`
+	Issuer           string      `yaml:"issuer"`
+	Storage          Storage     `yaml:"storage"`
+	Web              Web         `yaml:"web"`
+	GRPC             GRPC        `yaml:"grpc"`
+	OAuth2           *OAuth2     `yaml:"oauth2,omitempty"`
+	Expiry           *Expiry     `yaml:"expiry,omitempty"`
+	Logger           *Logger     `yaml:"logger,omitempty"`
+	Frontend         *Frontend   `yaml:"frontend,omitempty"`
+	Telemetry        *Telemetry  `yaml:"telemetry,omitempty"`
+	Connectors       []Connector `yaml:"connectors"`
+	EnablePasswordDB bool        `yaml:"enablePasswordDB"`
 }
 
 // OAuth2 describes enabled OAuth2 extensions.

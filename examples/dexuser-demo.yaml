@@ -1,0 +1,11 @@
+kind: DexUser
+apiVersion: dex.gpu-ninja.com/v1alpha1
+metadata:
+  name: demo
+  labels:
+    app.kubernetes.io/component: user
+spec:
+  identityProviderRef:
+    name: demo
+  secretName: demo-user-password
+  email: demo@example.com

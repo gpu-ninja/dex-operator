@@ -19,8 +19,6 @@ package controller
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -28,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,6 +36,7 @@ import (
 	"github.com/gpu-ninja/dex-operator/api"
 	dexv1alpha1 "github.com/gpu-ninja/dex-operator/api/v1alpha1"
 	"github.com/gpu-ninja/dex-operator/internal/dex"
+	"github.com/gpu-ninja/operator-utils/password"
 	"github.com/gpu-ninja/operator-utils/updater"
 	"github.com/gpu-ninja/operator-utils/zaplogr"
 )
@@ -122,18 +120,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	idpObj, ok, err := oauth2Client.Spec.IdentityProviderRef.Resolve(ctx, r.Client, r.Scheme, &oauth2Client)
-	if err != nil {
-		logger.Error("Failed to resolve Identity Provider reference", zap.Error(err))
-
-		r.Recorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
-			"Failed", "Failed to resolve identity provider reference: %s", err)
-
-		r.markFailed(ctx, &oauth2Client,
-			fmt.Errorf("failed to resolve identity provider reference: %w", err))
-
-		return ctrl.Result{}, nil
-	}
-	if !ok {
+	if err != nil || !ok {
 		return ctrl.Result{}, fmt.Errorf("failed to resolve identity provider reference")
 	}
 	idp := idpObj.(*dexv1alpha1.DexIdentityProvider)
@@ -153,19 +140,15 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{RequeueAfter: reconcileRetryInterval}, nil
 	}
 
-	clientSecretNamespaceName := types.NamespacedName{
-		Namespace: oauth2Client.Namespace,
-		Name:      oauth2Client.Spec.SecretName,
-	}
 	clientSecret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      clientSecretNamespaceName.Name,
-			Namespace: clientSecretNamespaceName.Namespace,
+			Name:      oauth2Client.Spec.SecretName,
+			Namespace: oauth2Client.Namespace,
 		},
 	}
 
 	var creating bool
-	if err := r.Client.Get(ctx, clientSecretNamespaceName, &clientSecret); err != nil {
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(&clientSecret), &clientSecret); err != nil {
 		if errors.IsNotFound(err) {
 			creating = true
 		} else {
@@ -177,7 +160,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			r.markFailed(ctx, &oauth2Client,
 				fmt.Errorf("failed to get client secret: %w", err))
 
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, fmt.Errorf("failed to get client secret: %w", err)
 		}
 	}
 
@@ -230,7 +213,7 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		r.markFailed(ctx, &oauth2Client,
 			fmt.Errorf("failed to set owner reference: %w", err))
 
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, fmt.Errorf("failed to set owner reference: %w", err)
 	}
 
 	dexAPIClient, err := r.DexClientBuilder.
@@ -255,10 +238,21 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		oauth2ClientSecret = string(clientSecret.Data["secret"])
 	} else {
 		oauth2ClientID = uuid.New().String()
-		oauth2ClientSecret = generateRandomString(16)
+		oauth2ClientSecret, err = password.Generate(32)
+		if err != nil {
+			logger.Error("Failed to generate client secret", zap.Error(err))
+
+			r.Recorder.Event(&oauth2Client, corev1.EventTypeWarning,
+				"Failed", "Failed to generate client secret")
+
+			r.markFailed(ctx, &oauth2Client,
+				fmt.Errorf("failed to generate client secret: %w", err))
+
+			return ctrl.Result{}, fmt.Errorf("failed to generate client secret: %w", err)
+		}
 	}
 
-	// TODO: use GetClient() when it is released.
+	// TODO: use GetClient() when it is released (so that we can detect updates).
 
 	updateResp, err := dexAPIClient.UpdateClient(ctx, &dexapi.UpdateClientReq{
 		Id:           oauth2ClientID,
@@ -303,41 +297,38 @@ func (r *DexOAuth2ClientReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			r.markFailed(ctx, &oauth2Client,
 				fmt.Errorf("failed to create client via dex api: %w", err))
 
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, fmt.Errorf("failed to create client via dex api: %w", err)
 		}
 	}
 
 	if creating {
 		logger.Info("Saving client secret")
 
-		_, err := controllerutil.CreateOrPatch(ctx, r.Client, &clientSecret, func() error {
-			if err := controllerutil.SetControllerReference(&oauth2Client, &clientSecret, r.Scheme); err != nil {
-				return fmt.Errorf("failed to set controller reference: %w", err)
-			}
-
-			clientSecret.StringData = map[string]string{
-				"id":     oauth2ClientID,
-				"secret": oauth2ClientSecret,
-			}
-
-			return nil
-		})
+		clientSecret, err := r.clientSecretTemplate(&oauth2Client, oauth2ClientID, oauth2ClientSecret)
 		if err != nil {
-			logger.Error("Failed to save client secret", zap.Error(err))
-
-			r.Recorder.Event(&oauth2Client, corev1.EventTypeWarning,
-				"Failed", "Failed to save client secret")
+			r.Recorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
+				"Failed", "Failed to generate client secret template: %s", err)
 
 			r.markFailed(ctx, &oauth2Client,
-				fmt.Errorf("failed to save client secret: %w", err))
+				fmt.Errorf("failed to generate client secret template: %w", err))
 
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, fmt.Errorf("failed to generate client secret template: %w", err)
+		}
+
+		if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, clientSecret); err != nil {
+			r.Recorder.Eventf(&oauth2Client, corev1.EventTypeWarning,
+				"Failed", "Failed to reconcile client secret: %s", err)
+
+			r.markFailed(ctx, &oauth2Client,
+				fmt.Errorf("failed to reconcile client secret: %w", err))
+
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile client secret: %w", err)
 		}
 	}
 
 	if oauth2Client.Status.Phase != dexv1alpha1.DexOAuth2ClientPhaseReady {
 		r.Recorder.Event(&oauth2Client, corev1.EventTypeNormal,
-			"Created", "Successfully created")
+			"Reconciled", "Successfully created or updated")
 
 		if err := r.markReady(ctx, &oauth2Client); err != nil {
 			return ctrl.Result{}, err
@@ -355,8 +346,7 @@ func (r *DexOAuth2ClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (r *DexOAuth2ClientReconciler) markPending(ctx context.Context, oauth2Client *dexv1alpha1.DexOAuth2Client) error {
-	key := client.ObjectKeyFromObject(oauth2Client)
-	err := updater.UpdateStatus(ctx, r.Client, key, oauth2Client, func() error {
+	err := updater.UpdateStatus(ctx, r.Client, client.ObjectKeyFromObject(oauth2Client), oauth2Client, func() error {
 		oauth2Client.Status.ObservedGeneration = oauth2Client.ObjectMeta.Generation
 		oauth2Client.Status.Phase = dexv1alpha1.DexOAuth2ClientPhasePending
 
@@ -370,8 +360,7 @@ func (r *DexOAuth2ClientReconciler) markPending(ctx context.Context, oauth2Clien
 }
 
 func (r *DexOAuth2ClientReconciler) markReady(ctx context.Context, oauth2Client *dexv1alpha1.DexOAuth2Client) error {
-	key := client.ObjectKeyFromObject(oauth2Client)
-	err := updater.UpdateStatus(ctx, r.Client, key, oauth2Client, func() error {
+	err := updater.UpdateStatus(ctx, r.Client, client.ObjectKeyFromObject(oauth2Client), oauth2Client, func() error {
 		oauth2Client.Status.ObservedGeneration = oauth2Client.Generation
 		oauth2Client.Status.Phase = dexv1alpha1.DexOAuth2ClientPhaseReady
 
@@ -387,8 +376,7 @@ func (r *DexOAuth2ClientReconciler) markReady(ctx context.Context, oauth2Client 
 func (r *DexOAuth2ClientReconciler) markFailed(ctx context.Context, oauth2Client *dexv1alpha1.DexOAuth2Client, err error) {
 	logger := zaplogr.FromContext(ctx)
 
-	key := client.ObjectKeyFromObject(oauth2Client)
-	updateErr := updater.UpdateStatus(ctx, r.Client, key, oauth2Client, func() error {
+	updateErr := updater.UpdateStatus(ctx, r.Client, client.ObjectKeyFromObject(oauth2Client), oauth2Client, func() error {
 		oauth2Client.Status.ObservedGeneration = oauth2Client.Generation
 		oauth2Client.Status.Phase = dexv1alpha1.DexOAuth2ClientPhaseFailed
 		oauth2Client.Status.Reason = err.Error()
@@ -426,8 +414,34 @@ func (r *DexOAuth2ClientReconciler) setOwner(ctx context.Context, oauth2Client *
 	return err
 }
 
-func generateRandomString(length int) string {
-	buffer := make([]byte, length)
-	_, _ = rand.Read(buffer)
-	return base64.RawStdEncoding.EncodeToString(buffer)
+func (r *DexOAuth2ClientReconciler) clientSecretTemplate(oauth2Client *dexv1alpha1.DexOAuth2Client, oauth2ClientID, oauth2ClientSecret string) (*corev1.Secret, error) {
+	secret := corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      oauth2Client.Spec.SecretName,
+			Namespace: oauth2Client.Namespace,
+			Labels:    make(map[string]string),
+		},
+		Data: map[string][]byte{
+			"id":     []byte(oauth2ClientID),
+			"secret": []byte(oauth2ClientSecret),
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(oauth2Client, &secret, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	for k, v := range oauth2Client.ObjectMeta.Labels {
+		secret.ObjectMeta.Labels[k] = v
+	}
+
+	secret.ObjectMeta.Labels["app.kubernetes.io/name"] = "oauth2client"
+	secret.ObjectMeta.Labels["app.kubernetes.io/instance"] = oauth2Client.Name
+	secret.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
+
+	return &secret, nil
 }

@@ -15,6 +15,7 @@ not listed here, please open an issue or submit a PR!
 
 ### Connectors
 
+* Static Passwords
 * [LDAP](https://dexidp.io/docs/connectors/ldap/)
 * [OpenID Connect (OIDC)](https://dexidp.io/docs/connectors/oidc/)
 
@@ -55,4 +56,10 @@ kubectl apply -f examples -l app.kubernetes.io/component=provider
 
 ```shell
 kubectl apply -f examples -l app.kubernetes.io/component=client
+```
+
+#### Create a Static User
+
+```shell
+kubectl apply -f examples -l app.kubernetes.io/component=user
 ```

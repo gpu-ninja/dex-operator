@@ -92,8 +92,8 @@ type DexOAuth2ClientList struct {
 	Items           []DexOAuth2Client `json:"items"`
 }
 
-func (d *DexOAuth2Client) ResolveReferences(ctx context.Context, reader client.Reader, scheme *runtime.Scheme) (bool, error) {
-	_, ok, err := d.Spec.IdentityProviderRef.Resolve(ctx, reader, scheme, d)
+func (c *DexOAuth2Client) ResolveReferences(ctx context.Context, reader client.Reader, scheme *runtime.Scheme) (bool, error) {
+	_, ok, err := c.Spec.IdentityProviderRef.Resolve(ctx, reader, scheme, c)
 	if !ok || err != nil {
 		return ok, err
 	}

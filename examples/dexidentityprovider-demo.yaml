@@ -23,36 +23,9 @@ spec:
       name: demo-tls
     clientCASecretRef:
       name: demo-api-ca-tls
-    reflection: true
   metrics:
     enabled: true
     interval: 30s
-  connectors:
-  - type: ldap
-    name: LDAP
-    id: ldap
-    ldap:
-      host: ldap.example.com:636
-      caSecretRef:
-        name: ca-tls
-      bindUsername: cn=admin,dc=example,dc=com
-      bindPasswordSecretRef:
-        name: ldap-bind-password
-      userSearch:
-        baseDN: ou=users,dc=example,dc=com
-        filter: (objectClass=person)
-        username: uid
-        idAttr: uid
-        emailAttr: mail
-        nameAttr: cn
-        preferredUsernameAttr: uid
-      groupSearch:
-        baseDN: ou=groups,dc=example,dc=com
-        filter: "(objectClass=groupOfNames)"
-        nameAttr: cn
-        userMatchers:
-        - userAttr: uid
-          groupAttr: member
   volumeMounts:
   - name: data
     mountPath: /var/lib/dex

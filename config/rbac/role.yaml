@@ -104,6 +104,32 @@ rules:
   - patch
   - update
 - apiGroups:
+  - dex.gpu-ninja.com
+  resources:
+  - dexusers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - dex.gpu-ninja.com
+  resources:
+  - dexusers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - dex.gpu-ninja.com
+  resources:
+  - dexusers/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - monitoring.coreos.com
   resources:
   - servicemonitors

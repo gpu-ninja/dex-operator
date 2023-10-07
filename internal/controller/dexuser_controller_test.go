@@ -46,7 +46,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-func TestDexOAuth2ClientReconciler(t *testing.T) {
+func TestDexUserReconciler(t *testing.T) {
 	ctrl.SetLogger(zaplogr.New(zaptest.NewLogger(t)))
 
 	scheme := runtime.NewScheme()
@@ -57,19 +57,17 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 	err = dexv1alpha1.AddToScheme(scheme)
 	require.NoError(t, err)
 
-	oauth2Client := &dexv1alpha1.DexOAuth2Client{
+	user := &dexv1alpha1.DexUser{
 		ObjectMeta: ctrl.ObjectMeta{
 			Name:      "test",
 			Namespace: "default",
 		},
-		Spec: dexv1alpha1.DexOAuth2ClientSpec{
-			IdentityProviderRef: api.DexIdentityProviderReference{
+		Spec: dexv1alpha1.DexUserSpec{
+			IdentityProviderRef: api.LocalDexIdentityProviderReference{
 				Name: "test",
 			},
-			SecretName: "oauth2-client-secret",
-			RedirectURIs: []string{
-				"https://client.example.com/callback",
-			},
+			SecretName: "test-password",
+			Email:      "admin@example.com",
 		},
 	}
 
@@ -84,17 +82,6 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 		},
 	}
 
-	generatedClientSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "oauth2-client-secret",
-			Namespace: "default",
-		},
-		Data: map[string][]byte{
-			"client_id":     []byte("id"),
-			"client_secret": []byte("secret"),
-		},
-	}
-
 	subResourceClient := fakeutils.NewSubResourceClient(scheme)
 
 	interceptorFuncs := interceptor.Funcs{
@@ -103,7 +90,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 		},
 	}
 
-	r := &controller.DexOAuth2ClientReconciler{
+	r := &controller.DexUserReconciler{
 		Scheme: scheme,
 	}
 
@@ -117,26 +104,26 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 		r.Client = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(oauth2Client, idp).
-			WithStatusSubresource(oauth2Client, idp).
+			WithObjects(user, idp).
+			WithStatusSubresource(user, idp).
 			WithInterceptorFuncs(interceptorFuncs).
 			Build()
 
 		var m mock.Mock
 		r.DexClientBuilder = dex.NewFakeClientBuilder(&m)
 
-		m.On("UpdateClient", mock.Anything, mock.Anything, mock.Anything).
-			Return(&dexapi.UpdateClientResp{
+		m.On("VerifyPassword", mock.Anything, mock.Anything, mock.Anything).
+			Return(&dexapi.VerifyPasswordResp{
 				NotFound: true,
 			}, nil)
 
-		m.On("CreateClient", mock.Anything, mock.Anything, mock.Anything).
-			Return(&dexapi.CreateClientResp{}, nil)
+		m.On("CreatePassword", mock.Anything, mock.Anything, mock.Anything).
+			Return(&dexapi.CreatePasswordResp{}, nil)
 
 		resp, err := r.Reconcile(ctx, reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name:      oauth2Client.Name,
-				Namespace: oauth2Client.Namespace,
+				Name:      user.Name,
+				Namespace: user.Namespace,
 			},
 		})
 		require.NoError(t, err)
@@ -146,17 +133,67 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 		event := <-eventRecorder.Events
 		assert.Equal(t, "Normal Reconciled Successfully created or updated", event)
 
-		updatedOAuth2Client := oauth2Client.DeepCopy()
-		err = subResourceClient.Get(ctx, oauth2Client, updatedOAuth2Client)
+		updatedUser := user.DeepCopy()
+		err = subResourceClient.Get(ctx, user, updatedUser)
 		require.NoError(t, err)
 
-		assert.Equal(t, dexv1alpha1.DexOAuth2ClientPhaseReady, updatedOAuth2Client.Status.Phase)
+		assert.Equal(t, dexv1alpha1.DexUserPhaseReady, updatedUser.Status.Phase)
+
+		secret := corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      user.Spec.SecretName,
+				Namespace: user.Namespace,
+			},
+		}
+
+		err = r.Client.Get(ctx, client.ObjectKeyFromObject(&secret), &secret)
+		require.NoError(t, err)
+
+		secret.Data["password"] = []byte("override")
+
+		r.Client = fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(updatedUser, idp, &secret).
+			WithStatusSubresource(updatedUser, idp).
+			WithInterceptorFuncs(interceptorFuncs).
+			Build()
+
+		m = mock.Mock{}
+		r.DexClientBuilder = dex.NewFakeClientBuilder(&m)
+
+		m.On("VerifyPassword", mock.Anything, mock.Anything, mock.Anything).
+			Return(&dexapi.VerifyPasswordResp{
+				Verified: false,
+			}, nil)
+
+		m.On("UpdatePassword", mock.Anything, mock.Anything, mock.Anything).
+			Return(&dexapi.UpdatePasswordResp{}, nil)
+
+		resp, err = r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      updatedUser.Name,
+				Namespace: updatedUser.Namespace,
+			},
+		})
+		require.NoError(t, err)
+		assert.Zero(t, resp)
+
+		require.Len(t, eventRecorder.Events, 1)
+		event = <-eventRecorder.Events
+
+		assert.Equal(t, "Normal Reconciled Successfully created or updated", event)
+
+		updatedUser = user.DeepCopy()
+		err = subResourceClient.Get(ctx, user, updatedUser)
+		require.NoError(t, err)
+
+		assert.Equal(t, dexv1alpha1.DexUserPhaseReady, updatedUser.Status.Phase)
 	})
 
 	t.Run("Delete", func(t *testing.T) {
-		deletingOauth2Client := oauth2Client.DeepCopy()
-		deletingOauth2Client.DeletionTimestamp = &metav1.Time{Time: metav1.Now().Add(-1 * time.Second)}
-		deletingOauth2Client.Finalizers = []string{controller.FinalizerName}
+		deletingUser := user.DeepCopy()
+		deletingUser.DeletionTimestamp = &metav1.Time{Time: metav1.Now().Add(-1 * time.Second)}
+		deletingUser.Finalizers = []string{controller.FinalizerName}
 
 		eventRecorder := record.NewFakeRecorder(2)
 		r.Recorder = eventRecorder
@@ -165,16 +202,16 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 		r.Client = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(deletingOauth2Client, idp, generatedClientSecret).
-			WithStatusSubresource(deletingOauth2Client).
+			WithObjects(deletingUser, idp).
+			WithStatusSubresource(deletingUser).
 			WithInterceptorFuncs(interceptorFuncs).
 			Build()
 
 		var m mock.Mock
 		r.DexClientBuilder = dex.NewFakeClientBuilder(&m)
 
-		m.On("DeleteClient", mock.Anything, mock.Anything, mock.Anything).
-			Return(&dexapi.DeleteClientResp{}, nil)
+		m.On("DeletePassword", mock.Anything, mock.Anything, mock.Anything).
+			Return(&dexapi.DeletePasswordResp{}, nil)
 
 		resp, err := r.Reconcile(ctx, reconcile.Request{
 			NamespacedName: types.NamespacedName{
@@ -187,7 +224,7 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 		assert.Len(t, eventRecorder.Events, 0)
 
-		m.AssertCalled(t, "DeleteClient", mock.Anything, mock.Anything, mock.Anything)
+		m.AssertCalled(t, "DeletePassword", mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("References Not Resolvable", func(t *testing.T) {
@@ -198,15 +235,15 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 		r.Client = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(oauth2Client).
-			WithStatusSubresource(oauth2Client).
+			WithObjects(user). // Note missing IDP
+			WithStatusSubresource(user).
 			WithInterceptorFuncs(interceptorFuncs).
 			Build()
 
 		resp, err := r.Reconcile(ctx, reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name:      oauth2Client.Name,
-				Namespace: oauth2Client.Namespace,
+				Name:      user.Name,
+				Namespace: user.Namespace,
 			},
 		})
 		require.NoError(t, err)
@@ -216,47 +253,11 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 		event := <-eventRecorder.Events
 		assert.Equal(t, "Warning NotReady Not all references are resolvable", event)
 
-		updatedOAuth2Client := oauth2Client.DeepCopy()
-		err = subResourceClient.Get(ctx, oauth2Client, updatedOAuth2Client)
+		updatedUser := user.DeepCopy()
+		err = subResourceClient.Get(ctx, user, updatedUser)
 		require.NoError(t, err)
 
-		assert.Equal(t, dexv1alpha1.DexOAuth2ClientPhasePending, updatedOAuth2Client.Status.Phase)
-	})
-
-	t.Run("Identity Provider Not Ready", func(t *testing.T) {
-		eventRecorder := record.NewFakeRecorder(2)
-		r.Recorder = eventRecorder
-
-		subResourceClient.Reset()
-
-		notReadyIDP := idp.DeepCopy()
-		notReadyIDP.Status.Phase = dexv1alpha1.DexIdentityProviderPhasePending
-
-		r.Client = fake.NewClientBuilder().
-			WithScheme(scheme).
-			WithObjects(oauth2Client, notReadyIDP).
-			WithStatusSubresource(oauth2Client, notReadyIDP).
-			WithInterceptorFuncs(interceptorFuncs).
-			Build()
-
-		resp, err := r.Reconcile(ctx, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name:      idp.Name,
-				Namespace: idp.Namespace,
-			},
-		})
-		require.NoError(t, err)
-		assert.NotZero(t, resp.RequeueAfter)
-
-		require.Len(t, eventRecorder.Events, 1)
-		event := <-eventRecorder.Events
-		assert.Equal(t, "Warning NotReady Referenced identity provider is not ready", event)
-
-		updatedOAuth2Client := oauth2Client.DeepCopy()
-		err = subResourceClient.Get(ctx, oauth2Client, updatedOAuth2Client)
-		require.NoError(t, err)
-
-		assert.Equal(t, dexv1alpha1.DexOAuth2ClientPhasePending, updatedOAuth2Client.Status.Phase)
+		assert.Equal(t, dexv1alpha1.DexUserPhasePending, updatedUser.Status.Phase)
 	})
 
 	t.Run("Failure", func(t *testing.T) {
@@ -276,27 +277,27 @@ func TestDexOAuth2ClientReconciler(t *testing.T) {
 
 		r.Client = fake.NewClientBuilder().
 			WithScheme(scheme).
-			WithObjects(oauth2Client, idp).
-			WithStatusSubresource(oauth2Client).
+			WithObjects(user, idp).
+			WithStatusSubresource(user).
 			WithInterceptorFuncs(failOnSecrets).
 			Build()
 
 		_, err := r.Reconcile(ctx, reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name:      oauth2Client.Name,
-				Namespace: oauth2Client.Namespace,
+				Name:      user.Name,
+				Namespace: user.Namespace,
 			},
 		})
 		require.Error(t, err)
 
 		require.Len(t, eventRecorder.Events, 1)
 		event := <-eventRecorder.Events
-		assert.Equal(t, "Warning Failed Failed to get client secret", event)
+		assert.Equal(t, "Warning Failed Failed to get user password secret", event)
 
-		updatedOAuth2Client := oauth2Client.DeepCopy()
-		err = subResourceClient.Get(ctx, oauth2Client, updatedOAuth2Client)
+		updatedUser := user.DeepCopy()
+		err = subResourceClient.Get(ctx, user, updatedUser)
 		require.NoError(t, err)
 
-		assert.Equal(t, dexv1alpha1.DexOAuth2ClientPhaseFailed, updatedOAuth2Client.Status.Phase)
+		assert.Equal(t, dexv1alpha1.DexUserPhaseFailed, updatedUser.Status.Phase)
 	})
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
@@ -68,14 +69,46 @@ func TestOperator(t *testing.T) {
 	})
 	require.NoError(t, err, "failed to wait for demo-client-secret")
 
-	t.Log("Client secret created successfully")
-
-	t.Log("Deleting dex identity provider (to test cleanup)")
+	t.Log("Waiting for demo user to be ready")
 
 	dynamicClient, err := dynamic.NewForConfig(config)
 	require.NoError(t, err)
 
 	gvr := schema.GroupVersionResource{
+		Group:    "dex.gpu-ninja.com",
+		Version:  "v1alpha1",
+		Resource: "dexusers",
+	}
+
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		user, err := dynamicClient.Resource(gvr).Namespace("default").Get(ctx, "demo", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		phase, found, err := unstructured.NestedString(user.Object, "status", "phase")
+		if err != nil {
+			return false, err
+		}
+
+		if !found || phase != "Ready" {
+			t.Log("Not yet ready")
+
+			return false, nil
+		} else {
+			return true, nil
+		}
+	})
+	require.NoError(t, err, "failed to wait for demo user to be ready")
+
+	t.Log("Checking demo-user-password secret has been created")
+
+	_, err = clientset.CoreV1().Secrets("default").Get(ctx, "demo-user-password", metav1.GetOptions{})
+	require.NoError(t, err, "failed to get demo-user-password secret")
+
+	t.Log("Deleting dex identity provider (to test cleanup)")
+
+	gvr = schema.GroupVersionResource{
 		Group:    "dex.gpu-ninja.com",
 		Version:  "v1alpha1",
 		Resource: "dexidentityproviders",
@@ -99,10 +132,38 @@ func TestOperator(t *testing.T) {
 		return false, nil
 	})
 	require.NoError(t, err, "failed to wait for demo-client-secret to be deleted")
+
+	t.Log("Waiting for demo-user-password to be deleted")
+
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		_, err := clientset.CoreV1().Secrets("default").Get(ctx, "demo-user-password", metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		} else if err != nil {
+			return true, err
+		}
+
+		t.Log("Not yet deleted")
+
+		return false, nil
+	})
+	require.NoError(t, err, "failed to wait for demo-user-password to be deleted")
+
+	t.Log("Deleting example resources")
+
+	require.NoError(t, deleteExampleResources())
 }
 
 func createExampleResources(examplesDir string) error {
 	cmd := exec.Command("kapp", "deploy", "-y", "-a", "dex-operator-examples", "-f", examplesDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
+func deleteExampleResources() error {
+	cmd := exec.Command("kapp", "delete", "-y", "-a", "dex-operator-examples")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
