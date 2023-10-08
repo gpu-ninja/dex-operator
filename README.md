@@ -30,12 +30,21 @@ not listed here, please open an issue or submit a PR!
 
 #### Dependencies
 
+##### Third Party
+
 ```shell
 PROMETHEUS_VERSION="v0.68.0"
 CERT_MANAGER_VERSION="v1.12.0"
 
 kapp deploy -y -a prometheus-crds -f "https://github.com/prometheus-operator/prometheus-operator/releases/download/${PROMETHEUS_VERSION}/stripped-down-crds.yaml"
 kapp deploy -y -a cert-manager -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml"
+```
+##### GPU Ninja
+
+```shell
+REPLIKATOR_VERSION="v0.4.3"
+
+kapp deploy -y -a replikator -f "https://github.com/gpu-ninja/replikator/releases/download/${REPLIKATOR_VERSION}/replikator.yaml"
 ```
 
 #### Operator
