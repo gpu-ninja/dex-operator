@@ -20,6 +20,8 @@ export ROOT_DIR="$(find_root_dir)"
 PROMETHEUS_VERSION="v0.68.0"
 CERT_MANAGER_VERSION="v1.12.0"
 
+REPLIKATOR_VERSION="v0.4.3"
+
 CLUSTER_NAME="dex-operator-$(date +%s | rhash --simple - | cut -f 1 -d ' ')"
 
 clean_up() {
@@ -40,7 +42,7 @@ fi
 
 echo 'Creating k3d cluster'
 
-k3d cluster create "${CLUSTER_NAME}" --wait
+k3d cluster create "${CLUSTER_NAME}" -p "8080:80@loadbalancer" --wait
 
 echo 'Waiting for k3s setup to complete'
 
@@ -53,6 +55,10 @@ kapp deploy -y -a prometheus-crds -f "https://github.com/prometheus-operator/pro
 echo 'Installing Cert Manager'
 
 kapp deploy -y -a cert-manager -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml"
+
+echo 'Installing Replikator'
+
+kapp deploy -y -a replikator -f "https://github.com/gpu-ninja/replikator/releases/download/${REPLIKATOR_VERSION}/replikator.yaml"
 
 echo 'Loading operator image into cluster'
 

@@ -41,9 +41,9 @@ import (
 	"github.com/gpu-ninja/operator-utils/zaplogr"
 )
 
-//+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexoauth2clients,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexoauth2clients/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexoauth2clients/finalizers,verbs=update
+// +kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexoauth2clients,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexoauth2clients/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexoauth2clients/finalizers,verbs=update
 
 // DexOAuth2ClientReconciler reconciles a DexOAuth2Client object
 type DexOAuth2ClientReconciler struct {

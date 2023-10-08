@@ -24,6 +24,7 @@ import (
 	"github.com/gpu-ninja/dex-operator/api"
 	"github.com/gpu-ninja/operator-utils/reference"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -76,17 +77,6 @@ type DexIdentityProviderExpirySpec struct {
 	RefreshTokens *DexIdentityProviderRefreshTokenSpec `json:"refreshTokens,omitempty"`
 }
 
-// DexIdentityProviderWebSpec holds configuration for the web server.
-type DexIdentityProviderWebSpec struct {
-	// CertificateSecretRef is an optional reference to a secret containing the TLS certificate and key
-	// to use for HTTPS.
-	CertificateSecretRef *reference.LocalSecretReference `json:"certificateSecretRef,omitempty"`
-	// AllowedOrigins is a list of allowed origins for CORS requests.
-	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
-	// Annotations is an optional map of additional annotations to add to the web server's service.
-	Annotations map[string]string `json:"annotations,omitempty"`
-}
-
 // DexIdentityProviderFrontendSpec holds the server's frontend templates and asset configuration.
 type DexIdentityProviderFrontendSpec struct {
 	// Dir is a file path to static web assets.
@@ -107,6 +97,7 @@ type DexIdentityProviderFrontendSpec struct {
 	Theme string `json:"theme,omitempty"`
 }
 
+// DexIdentityProviderLoggerSpec allows customizing logging for Dex.
 type DexIdentityProviderLoggerSpec struct {
 	// Level sets logging level severity.
 	Level string `json:"level,omitempty"`
@@ -123,28 +114,70 @@ type DexIdentityProviderMetricsSpec struct {
 	Interval Duration `json:"interval,omitempty"`
 }
 
-// DexIdentityProviderGRPCSpec holds configuration for the gRPC server.
+// DexIdentityProviderGRPCSpec holds configuration for the Dex API gRPC server.
 type DexIdentityProviderGRPCSpec struct {
 	// CertificateSecretRef is an optional reference to a secret containing the TLS certificate and key
-	// to use for the gRPC server.
+	// to use for the Dex API gRPC server.
 	CertificateSecretRef *reference.LocalSecretReference `json:"certificateSecretRef,omitempty"`
 	// ClientCASecretRef is an optional reference to a secret containing the client CA.
 	ClientCASecretRef *reference.LocalSecretReference `json:"clientCASecretRef,omitempty"`
 	// Reflection enables gRPC server reflection.
 	Reflection bool `json:"reflection,omitempty"`
-	// Annotations is an optional map of additional annotations to add to the gRPC server's service.
+	// Annotations is an optional map of additional annotations to add to the Dex API gRPC service.
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
-// DexIdentityProviderSpec defines the desired state of the Dex idP server.
+// DexIdentityProviderWebSpec holds configuration for the web server.
+type DexIdentityProviderWebSpec struct {
+	// CertificateSecretRef is an optional reference to a secret containing the TLS certificate and key
+	// to use for HTTPS.
+	CertificateSecretRef *reference.LocalSecretReference `json:"certificateSecretRef,omitempty"`
+	// AllowedOrigins is a list of allowed origins for CORS requests.
+	AllowedOrigins []string `json:"allowedOrigins,omitempty"`
+	// Annotations is an optional map of additional annotations to add to the web service.
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+// DexIdentityProviderIngressPathSpec is the ingress path configuration for a Dex identity provider.
+type DexIdentityProviderIngressPathSpec struct {
+	// Path is matched against the path of an incoming request.
+	Path string `json:"path"`
+	// PathType determines the interpretation of the Path matching.
+	// +kubebuilder:validation:Enum=Exact;Prefix;ImplementationSpecific
+	PathType networkingv1.PathType `json:"pathType"`
+}
+
+// DexIdentityProviderIngressHostSpec is the ingress host configuration for a Dex identity provider.
+type DexIdentityProviderIngressHostSpec struct {
+	// Host is the host to route traffic to the Dex identity provider.
+	Host string `json:"host"`
+	// Paths is a list of paths to route traffic to the Dex identity provider.
+	Paths []DexIdentityProviderIngressPathSpec `json:"paths"`
+}
+
+// DexIdentityProviderIngressSpec is the ingress configuration for a Dex identity provider.
+type DexIdentityProviderIngressSpec struct {
+	// Enabled enables ingress for the Dex identity provider.
+	Enabled bool `json:"enabled"`
+	// IngressClassName is the optional ingress class to use for the Dex identity provider.
+	IngressClassName *string `json:"ingressClassName,omitempty"`
+	// Annotations is an optional map of additional annotations to add to the ingress.
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Hosts is a list of hosts and paths to route traffic to the Dex identity provider.
+	Hosts []DexIdentityProviderIngressHostSpec `json:"hosts"`
+	// TLS is an optional list of TLS configurations for the ingress.
+	TLS []networkingv1.IngressTLS `json:"tls,omitempty"`
+}
+
+// DexIdentityProviderSpec defines the desired state of the Dex identity provider.
 type DexIdentityProviderSpec struct {
-	// Image is the Dex IdP image to use.
+	// Image is the Dex image to use.
 	Image string `json:"image"`
-	// Replicas is the optional number of replicas of the Dex IdP server to run.
+	// Replicas is the optional number of replicas of the Dex identity provider pod to run.
 	// Only supported if using postgresql storage.
 	Replicas *int32 `json:"replicas,omitempty"`
 	// ClientCertificateSecretRef is an optional reference to a secret containing a client
-	// certificate that the operator can use for connecting to the Dex IdP API server.
+	// certificate that the operator can use for connecting to the Dex API gRPC server.
 	ClientCertificateSecretRef *reference.LocalSecretReference `json:"clientCertificateSecretRef,omitempty"`
 	// Issuer is the base path of Dex and the external name of the OpenID
 	// Connect service. This is the canonical URL that all clients MUST use
@@ -152,22 +185,24 @@ type DexIdentityProviderSpec struct {
 	Issuer string `json:"issuer"`
 	// Storage configures the storage for Dex.
 	Storage DexIdentityProviderStorageSpec `json:"storage"`
-	// Web holds configuration for the web server.
-	Web DexIdentityProviderWebSpec `json:"web"`
-	// GRPC holds configuration for the gRPC server.
-	GRPC DexIdentityProviderGRPCSpec `json:"grpc"`
 	// OAuth2 holds configuration for OAuth2.
 	OAuth2 *DexIdentityProviderOAuth2Spec `json:"oauth2,omitempty"`
 	// Expiry holds configuration for tokens, signing keys, etc.
 	Expiry *DexIdentityProviderExpirySpec `json:"expiry,omitempty"`
-	// Frontend holds the server's frontend templates and asset configuration.
+	// Frontend holds the web server's frontend templates and asset configuration.
 	Frontend *DexIdentityProviderFrontendSpec `json:"frontend,omitempty"`
 	// Logger holds configuration required to customize logging for dex.
 	Logger *DexIdentityProviderLoggerSpec `json:"logger,omitempty"`
 	// Metrics holds configuration for metrics.
 	Metrics *DexIdentityProviderMetricsSpec `json:"metrics,omitempty"`
+	// GRPC holds configuration for the Dex API gRPC server.
+	GRPC DexIdentityProviderGRPCSpec `json:"grpc"`
+	// Web holds configuration for the web server.
+	Web DexIdentityProviderWebSpec `json:"web"`
 	// Connectors holds configuration for connectors.
 	Connectors []DexIdentityProviderConnectorSpec `json:"connectors,omitempty"`
+	// Ingress is the optional ingress configuration for the Dex identity provider.
+	Ingress *DexIdentityProviderIngressSpec `json:"ingress,omitempty"`
 	// VolumeMounts are volume mounts for the Dex identity provider container.
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 	// VolumeClaimTemplates are volume claim templates for the Dex identity provider pod.
@@ -176,7 +211,7 @@ type DexIdentityProviderSpec struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
-// DexIdentityProviderPhase is the current state of the Dex idP server.
+// DexIdentityProviderPhase is the current state of the Dex identity provider.
 type DexIdentityProviderPhase string
 
 const (
@@ -193,9 +228,9 @@ const (
 	DexIdentityProviderConditionTypeFailed  DexIdentityProviderConditionType = "Failed"
 )
 
-// DexIdentityProviderStatus defines the observed state of the Dex idP server.
+// DexIdentityProviderStatus defines the observed state of the Dex identity provider.
 type DexIdentityProviderStatus struct {
-	// Phase is the current state of the Dex idP server.
+	// Phase is the current state of the Dex identity provider.
 	Phase DexIdentityProviderPhase `json:"phase,omitempty"`
 	// ObservedGeneration is the most recent generation observed for this DexIdentityProvider by the controller.
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
@@ -205,7 +240,7 @@ type DexIdentityProviderStatus struct {
 	ClientRefs []api.DexOAuth2ClientReference `json:"clientRefs,omitempty"`
 }
 
-// DexIdentityProvider is a Dex IdP server.
+// DexIdentityProvider is a Dex identity provider instance.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=idp

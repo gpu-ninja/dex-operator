@@ -33,6 +33,7 @@ import (
 	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,16 +50,17 @@ import (
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch
 
 // Need to be able to read secrets to get password refs, and store dex config.
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
-// Need to be able to manage statefulsets, services, and service monitors.
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// Need to be able to manage statefulsets, services, ingresses, and service monitors.
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 
-//+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders/finalizers,verbs=update
+// +kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexidentityproviders/finalizers,verbs=update
 
 const (
 	// FinalizerName is the name of the finalizer used by controllers.
@@ -332,6 +334,64 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 	}
 
+	if idp.Spec.Ingress != nil && idp.Spec.Ingress.Enabled {
+		logger.Info("Reconciling ingress")
+
+		ing, err := r.ingressTemplate(&idp)
+		if err != nil {
+			r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+				"Failed", "Failed to generate ingress template: %s", err)
+
+			r.markFailed(ctx, &idp,
+				fmt.Errorf("failed to generate ingress template: %w", err))
+
+			return ctrl.Result{}, fmt.Errorf("failed to generate ingress template: %w", err)
+		}
+
+		if _, err := updater.CreateOrUpdateFromTemplate(ctx, r.Client, ing); err != nil {
+			r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+				"Failed", "Failed to reconcile ingress: %s", err)
+
+			r.markFailed(ctx, &idp,
+				fmt.Errorf("failed to reconcile ingress: %w", err))
+
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile ingress: %w", err)
+		}
+	} else {
+		ing := networkingv1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "dex-" + idp.Name,
+				Namespace: idp.Namespace,
+			},
+		}
+
+		if err := r.Get(ctx, client.ObjectKeyFromObject(&ing), &ing); err != nil {
+			if !apierrors.IsNotFound(err) {
+				r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+					"Failed", "Failed to get existing ingress: %s", err)
+
+				r.markFailed(ctx, &idp,
+					fmt.Errorf("failed to get existing ingress: %w", err))
+
+				return ctrl.Result{}, fmt.Errorf("failed to get existing ingress: %w", err)
+			}
+
+			// Not found, nothing to do.
+		} else {
+			logger.Info("Deleting existing ingress")
+
+			if err := r.Delete(ctx, &ing); err != nil {
+				r.Recorder.Eventf(&idp, corev1.EventTypeWarning,
+					"Failed", "Failed to delete existing ingress: %s", err)
+
+				r.markFailed(ctx, &idp,
+					fmt.Errorf("failed to delete existing ingress: %w", err))
+
+				return ctrl.Result{}, fmt.Errorf("failed to delete existing ingress: %w", err)
+			}
+		}
+	}
+
 	logger.Info("Checking if statefulset is ready")
 
 	ready, err := r.isStatefulSetReady(ctx, &idp)
@@ -376,6 +436,7 @@ func (r *DexIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Owns(&corev1.Secret{}).
+		Owns(&networkingv1.Ingress{}).
 		Owns(&monitoringv1.ServiceMonitor{}).
 		Complete(r)
 }
@@ -641,6 +702,75 @@ func (r *DexIdentityProviderReconciler) webServiceTemplate(idp *dexv1alpha1.DexI
 	svc.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
 
 	return &svc, nil
+}
+
+func (r *DexIdentityProviderReconciler) ingressTemplate(idp *dexv1alpha1.DexIdentityProvider) (*networkingv1.Ingress, error) {
+	var rules []networkingv1.IngressRule
+
+	servicePort := int32(80)
+	if idp.Spec.Web.CertificateSecretRef != nil {
+		servicePort = int32(443)
+	}
+
+	for _, hostSpec := range idp.Spec.Ingress.Hosts {
+		var paths []networkingv1.HTTPIngressPath
+
+		for _, pathSpec := range hostSpec.Paths {
+			paths = append(paths, networkingv1.HTTPIngressPath{
+				Path:     pathSpec.Path,
+				PathType: &pathSpec.PathType,
+				Backend: networkingv1.IngressBackend{
+					Service: &networkingv1.IngressServiceBackend{
+						Name: "dex-" + idp.Name,
+						Port: networkingv1.ServiceBackendPort{
+							Number: servicePort,
+						},
+					},
+				},
+			})
+		}
+
+		rules = append(rules, networkingv1.IngressRule{
+			Host: hostSpec.Host,
+			IngressRuleValue: networkingv1.IngressRuleValue{
+				HTTP: &networkingv1.HTTPIngressRuleValue{
+					Paths: paths,
+				},
+			},
+		})
+	}
+
+	ing := networkingv1.Ingress{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Ingress",
+			APIVersion: networkingv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "dex-" + idp.Name,
+			Namespace:   idp.Namespace,
+			Labels:      make(map[string]string),
+			Annotations: idp.Spec.Ingress.Annotations,
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: idp.Spec.Ingress.IngressClassName,
+			TLS:              idp.Spec.Ingress.TLS,
+			Rules:            rules,
+		},
+	}
+
+	if err := controllerutil.SetControllerReference(idp, &ing, r.Scheme); err != nil {
+		return nil, fmt.Errorf("failed to set controller reference: %w", err)
+	}
+
+	for k, v := range idp.ObjectMeta.Labels {
+		ing.ObjectMeta.Labels[k] = v
+	}
+
+	ing.ObjectMeta.Labels["app.kubernetes.io/name"] = "dex"
+	ing.ObjectMeta.Labels["app.kubernetes.io/instance"] = idp.Name
+	ing.ObjectMeta.Labels["app.kubernetes.io/managed-by"] = "dex-operator"
+
+	return &ing, nil
 }
 
 func (r *DexIdentityProviderReconciler) apiServiceTemplate(idp *dexv1alpha1.DexIdentityProvider) (*corev1.Service, error) {

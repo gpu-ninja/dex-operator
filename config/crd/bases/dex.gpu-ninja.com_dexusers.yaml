@@ -68,10 +68,6 @@ spec:
           status:
             description: DexUserStatus defines the observed state of the user.
             properties:
-              lastHash:
-                description: Hash is the bcrypt hash of the last password reconciled
-                  for this user.
-                type: string
               observedGeneration:
                 description: ObservedGeneration is the most recent generation observed
                   for this user by the controller.

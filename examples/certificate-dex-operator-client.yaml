@@ -1,0 +1,9 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dex-operator-client
+spec:
+  secretName: dex-operator-client-tls
+  issuerRef:
+    name: dex-api-ca
+  commonName: Dex Operator API Client

@@ -19,6 +19,7 @@ package main_test
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,31 +51,90 @@ func TestOperator(t *testing.T) {
 	clientset, err := kubernetes.NewForConfig(config)
 	require.NoError(t, err)
 
-	t.Log("Waiting for demo-client-secret to be created")
-
-	ctx := context.Background()
-	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-		_, err := clientset.CoreV1().Secrets("default").Get(ctx, "demo-client-secret", metav1.GetOptions{})
-		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return true, err
-			}
-
-			t.Log("Not yet ready")
-
-			return false, nil
-		}
-
-		return true, nil
-	})
-	require.NoError(t, err, "failed to wait for demo-client-secret")
-
-	t.Log("Waiting for demo user to be ready")
-
 	dynamicClient, err := dynamic.NewForConfig(config)
 	require.NoError(t, err)
 
+	t.Log("Waiting for dex identity provider to be ready")
+
 	gvr := schema.GroupVersionResource{
+		Group:    "dex.gpu-ninja.com",
+		Version:  "v1alpha1",
+		Resource: "dexidentityproviders",
+	}
+
+	ctx := context.Background()
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		user, err := dynamicClient.Resource(gvr).Namespace("default").Get(ctx, "demo", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		phase, found, err := unstructured.NestedString(user.Object, "status", "phase")
+		if err != nil {
+			return false, err
+		}
+
+		if !found || phase != "Ready" {
+			t.Log("Not yet ready")
+
+			return false, nil
+		} else {
+			return true, nil
+		}
+	})
+	require.NoError(t, err, "failed to wait for dex identity provider to be ready")
+
+	t.Log("Making web request to dex identity provider")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost:8080/.well-known/openid-configuration", nil)
+	require.NoError(t, err)
+
+	req.Host = "auth.local.koopt.sh:8080"
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	require.NoError(t, err, "failed to make request to dex identity provider")
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode, "request to dex identity provider failed")
+
+	t.Log("Waiting for demo client to be ready")
+
+	gvr = schema.GroupVersionResource{
+		Group:    "dex.gpu-ninja.com",
+		Version:  "v1alpha1",
+		Resource: "dexoauth2clients",
+	}
+
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		user, err := dynamicClient.Resource(gvr).Namespace("default").Get(ctx, "demo", metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+
+		phase, found, err := unstructured.NestedString(user.Object, "status", "phase")
+		if err != nil {
+			return false, err
+		}
+
+		if !found || phase != "Ready" {
+			t.Log("Not yet ready")
+
+			return false, nil
+		} else {
+			return true, nil
+		}
+	})
+	require.NoError(t, err, "failed to wait for demo client to be ready")
+
+	t.Log("Checking demo-client-secret has been created")
+
+	_, err = clientset.CoreV1().Secrets("default").Get(ctx, "demo-client-secret", metav1.GetOptions{})
+	require.NoError(t, err, "failed to get demo-client-secret secret")
+
+	t.Log("Waiting for demo user to be ready")
+
+	gvr = schema.GroupVersionResource{
 		Group:    "dex.gpu-ninja.com",
 		Version:  "v1alpha1",
 		Resource: "dexusers",

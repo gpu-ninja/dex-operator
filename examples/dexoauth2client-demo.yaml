@@ -7,4 +7,4 @@ spec:
     name: demo
   secretName: demo-client-secret
   redirectURIs:
-  - https://client.example.com/callback
+  - https://client.local.koopt.sh/callback

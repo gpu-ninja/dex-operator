@@ -41,9 +41,9 @@ import (
 	"github.com/gpu-ninja/operator-utils/zaplogr"
 )
 
-//+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexusers,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexusers/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexusers/finalizers,verbs=update
+// +kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexusers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexusers/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=dex.gpu-ninja.com,resources=dexusers/finalizers,verbs=update
 
 // DexUserReconciler reconciles a DexUser object
 type DexUserReconciler struct {

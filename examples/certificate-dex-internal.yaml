@@ -1,0 +1,12 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dex-internal
+spec:
+  secretName: dex-internal-tls
+  issuerRef:
+    name: root-ca
+    kind: ClusterIssuer
+  dnsNames:
+  - dex-demo.default.svc.cluster.local
+  - dex-demo-api.default.svc.cluster.local

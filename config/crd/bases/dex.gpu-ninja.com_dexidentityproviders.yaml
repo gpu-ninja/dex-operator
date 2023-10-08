@@ -26,7 +26,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: DexIdentityProvider is a Dex IdP server.
+        description: DexIdentityProvider is a Dex identity provider instance.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -42,12 +42,12 @@ spec:
             type: object
           spec:
             description: DexIdentityProviderSpec defines the desired state of the
-              Dex idP server.
+              Dex identity provider.
             properties:
               clientCertificateSecretRef:
                 description: ClientCertificateSecretRef is an optional reference to
                   a secret containing a client certificate that the operator can use
-                  for connecting to the Dex IdP API server.
+                  for connecting to the Dex API gRPC server.
                 properties:
                   name:
                     description: Name is the name of the secret.
@@ -407,8 +407,8 @@ spec:
                     type: string
                 type: object
               frontend:
-                description: Frontend holds the server's frontend templates and asset
-                  configuration.
+                description: Frontend holds the web server's frontend templates and
+                  asset configuration.
                 properties:
                   dir:
                     description: "Dir is a file path to static web assets. \n It is
@@ -431,18 +431,18 @@ spec:
                     type: string
                 type: object
               grpc:
-                description: GRPC holds configuration for the gRPC server.
+                description: GRPC holds configuration for the Dex API gRPC server.
                 properties:
                   annotations:
                     additionalProperties:
                       type: string
                     description: Annotations is an optional map of additional annotations
-                      to add to the gRPC server's service.
+                      to add to the Dex API gRPC service.
                     type: object
                   certificateSecretRef:
                     description: CertificateSecretRef is an optional reference to
                       a secret containing the TLS certificate and key to use for the
-                      gRPC server.
+                      Dex API gRPC server.
                     properties:
                       name:
                         description: Name is the name of the secret.
@@ -465,8 +465,97 @@ spec:
                     type: boolean
                 type: object
               image:
-                description: Image is the Dex IdP image to use.
+                description: Image is the Dex image to use.
                 type: string
+              ingress:
+                description: Ingress is the optional ingress configuration for the
+                  Dex identity provider.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: Annotations is an optional map of additional annotations
+                      to add to the ingress.
+                    type: object
+                  enabled:
+                    description: Enabled enables ingress for the Dex identity provider.
+                    type: boolean
+                  hosts:
+                    description: Hosts is a list of hosts and paths to route traffic
+                      to the Dex identity provider.
+                    items:
+                      description: DexIdentityProviderIngressHostSpec is the ingress
+                        host configuration for a Dex identity provider.
+                      properties:
+                        host:
+                          description: Host is the host to route traffic to the Dex
+                            identity provider.
+                          type: string
+                        paths:
+                          description: Paths is a list of paths to route traffic to
+                            the Dex identity provider.
+                          items:
+                            description: DexIdentityProviderIngressPathSpec is the
+                              ingress path configuration for a Dex identity provider.
+                            properties:
+                              path:
+                                description: Path is matched against the path of an
+                                  incoming request.
+                                type: string
+                              pathType:
+                                description: PathType determines the interpretation
+                                  of the Path matching.
+                                enum:
+                                - Exact
+                                - Prefix
+                                - ImplementationSpecific
+                                type: string
+                            required:
+                            - path
+                            - pathType
+                            type: object
+                          type: array
+                      required:
+                      - host
+                      - paths
+                      type: object
+                    type: array
+                  ingressClassName:
+                    description: IngressClassName is the optional ingress class to
+                      use for the Dex identity provider.
+                    type: string
+                  tls:
+                    description: TLS is an optional list of TLS configurations for
+                      the ingress.
+                    items:
+                      description: IngressTLS describes the transport layer security
+                        associated with an ingress.
+                      properties:
+                        hosts:
+                          description: hosts is a list of hosts included in the TLS
+                            certificate. The values in this list must match the name/s
+                            used in the tlsSecret. Defaults to the wildcard host setting
+                            for the loadbalancer controller fulfilling this Ingress,
+                            if left unspecified.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        secretName:
+                          description: secretName is the name of the secret used to
+                            terminate TLS traffic on port 443. Field is left optional
+                            to allow TLS routing based on SNI hostname alone. If the
+                            SNI host in a listener conflicts with the "Host" header
+                            field used by an IngressRule, the SNI host is used for
+                            termination and value of the "Host" header is used for
+                            routing.
+                          type: string
+                      type: object
+                    type: array
+                required:
+                - enabled
+                - hosts
+                type: object
               issuer:
                 description: Issuer is the base path of Dex and the external name
                   of the OpenID Connect service. This is the canonical URL that all
@@ -526,7 +615,8 @@ spec:
                 type: object
               replicas:
                 description: Replicas is the optional number of replicas of the Dex
-                  IdP server to run. Only supported if using postgresql storage.
+                  identity provider pod to run. Only supported if using postgresql
+                  storage.
                 format: int32
                 type: integer
               resources:
@@ -1124,7 +1214,7 @@ spec:
                     additionalProperties:
                       type: string
                     description: Annotations is an optional map of additional annotations
-                      to add to the web server's service.
+                      to add to the web service.
                     type: object
                   certificateSecretRef:
                     description: CertificateSecretRef is an optional reference to
@@ -1146,7 +1236,7 @@ spec:
             type: object
           status:
             description: DexIdentityProviderStatus defines the observed state of the
-              Dex idP server.
+              Dex identity provider.
             properties:
               clientRefs:
                 description: ClientRefs is a list of clients that are using this DexIdentityProvider.
@@ -1239,7 +1329,7 @@ spec:
                 format: int64
                 type: integer
               phase:
-                description: Phase is the current state of the Dex idP server.
+                description: Phase is the current state of the Dex identity provider.
                 type: string
             type: object
         type: object

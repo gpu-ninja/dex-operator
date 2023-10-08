@@ -34,6 +34,7 @@ import (
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -58,6 +59,9 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 	err = appsv1.AddToScheme(scheme)
 	require.NoError(t, err)
 
+	err = networkingv1.AddToScheme(scheme)
+	require.NoError(t, err)
+
 	err = monitoringv1.AddToScheme(scheme)
 	require.NoError(t, err)
 
@@ -79,6 +83,12 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 			},
 			Metrics: &dexv1alpha1.DexIdentityProviderMetricsSpec{
 				Enabled: true,
+			},
+			Ingress: &dexv1alpha1.DexIdentityProviderIngressSpec{
+				Enabled: true,
+				Hosts: []dexv1alpha1.DexIdentityProviderIngressHostSpec{{
+					Host: "dex.example.com",
+				}},
 			},
 			Connectors: []dexv1alpha1.DexIdentityProviderConnectorSpec{
 				{
@@ -241,6 +251,13 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 			Name:      "dex-" + idp.Name,
 			Namespace: idp.Namespace,
 		}, &serviceMonitor)
+		require.NoError(t, err)
+
+		var ingress networkingv1.Ingress
+		err = r.Client.Get(ctx, types.NamespacedName{
+			Name:      "dex-" + idp.Name,
+			Namespace: idp.Namespace,
+		}, &ingress)
 		require.NoError(t, err)
 
 		var sts appsv1.StatefulSet

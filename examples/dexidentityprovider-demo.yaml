@@ -2,30 +2,39 @@ kind: DexIdentityProvider
 apiVersion: dex.gpu-ninja.com/v1alpha1
 metadata:
   name: demo
-  labels:
-    app.kubernetes.io/component: provider
 spec:
   image: dexidp/dex:v2.37.0
   clientCertificateSecretRef:
-    name: demo-operator-client-tls
-  issuer: https://dex.example.com
+    name: dex-operator-client-tls
+  issuer: https://auth.local.koopt.sh
+  oauth2:
+    skipApprovalScreen: true
   storage:
     type: sqlite3
     sqlite3:
       file: /var/lib/dex/dex.db
-  web:
-    certificateSecretRef:
-      name: demo-tls
-    allowedOrigins:
-    - https://dex.example.com
   grpc:
     certificateSecretRef:
-      name: demo-tls
+      name: dex-internal-tls
     clientCASecretRef:
-      name: demo-api-ca-tls
+      name: dex-api-ca-tls
+  web:
+    certificateSecretRef:
+      name: dex-internal-tls
+    allowedOrigins:
+    - https://auth.local.koopt.sh
+    annotations:
+      traefik.ingress.kubernetes.io/service.serversscheme: https
+      traefik.ingress.kubernetes.io/service.serverstransport: default-demo@kubernetescrd
+  ingress:
+    enabled: true
+    hosts:
+    - host: auth.local.koopt.sh
+      paths:
+      - path: /
+        pathType: Prefix
   metrics:
     enabled: true
-    interval: 30s
   volumeMounts:
   - name: data
     mountPath: /var/lib/dex
@@ -37,4 +46,4 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 100Mi
+          storage: 10Mi

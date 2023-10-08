@@ -188,7 +188,7 @@ type DexIdentityProviderConnectorOIDCSpec struct {
 // DexIdentityProviderConnectorSpec holds configuration for a connector.
 type DexIdentityProviderConnectorSpec struct {
 	// Type is the connector type to use.
-	//+kubebuilder:validation:Enum=ldap;oidc
+	// +kubebuilder:validation:Enum=ldap;oidc
 	Type DexIdentityProviderConnectorType `json:"type"`
 	// Name is the connector name.
 	Name string `json:"name"`
