@@ -76,7 +76,7 @@ func (b *clientBuilderImpl) WithIdentityProvider(idp *dexv1alpha1.DexIdentityPro
 }
 
 func (b *clientBuilderImpl) Build(ctx context.Context) (api.DexClient, error) {
-	hostAndPort := fmt.Sprintf("dex-%s-api.%s.svc.%s:443", b.idp.Name, b.idp.Namespace, k8sutils.GetClusterDomain())
+	hostAndPort := fmt.Sprintf("%s.%s.svc.%s:443", b.idp.ChildResourceName("api"), b.idp.Namespace, k8sutils.GetClusterDomain())
 
 	transportCredentials := insecure.NewCredentials()
 	if b.idp.Spec.GRPC.CertificateSecretRef != nil {

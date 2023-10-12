@@ -3,6 +3,8 @@ kind: Certificate
 metadata:
   name: root-ca
   namespace: cert-manager
+  labels:
+    app.kubernetes.io/component: provider
 spec:
   isCA: true
   secretName: root-ca-tls

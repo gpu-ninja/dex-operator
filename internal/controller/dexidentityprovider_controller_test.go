@@ -227,42 +227,42 @@ func TestDexIdentityProviderReconciler(t *testing.T) {
 
 		var webService corev1.Service
 		err = r.Client.Get(ctx, types.NamespacedName{
-			Name:      "dex-" + idp.Name,
+			Name:      idp.ChildResourceName(),
 			Namespace: idp.Namespace,
 		}, &webService)
 		require.NoError(t, err)
 
 		var apiService corev1.Service
 		err = r.Client.Get(ctx, types.NamespacedName{
-			Name:      "dex-" + idp.Name + "-api",
+			Name:      idp.ChildResourceName("api"),
 			Namespace: idp.Namespace,
 		}, &apiService)
 		require.NoError(t, err)
 
 		var metricsService corev1.Service
 		err = r.Client.Get(ctx, types.NamespacedName{
-			Name:      "dex-" + idp.Name + "-metrics",
+			Name:      idp.ChildResourceName("metrics"),
 			Namespace: idp.Namespace,
 		}, &metricsService)
 		require.NoError(t, err)
 
 		var serviceMonitor monitoringv1.ServiceMonitor
 		err = r.Client.Get(ctx, types.NamespacedName{
-			Name:      "dex-" + idp.Name,
+			Name:      idp.ChildResourceName(),
 			Namespace: idp.Namespace,
 		}, &serviceMonitor)
 		require.NoError(t, err)
 
 		var ingress networkingv1.Ingress
 		err = r.Client.Get(ctx, types.NamespacedName{
-			Name:      "dex-" + idp.Name,
+			Name:      idp.ChildResourceName(),
 			Namespace: idp.Namespace,
 		}, &ingress)
 		require.NoError(t, err)
 
 		var sts appsv1.StatefulSet
 		err = r.Client.Get(ctx, types.NamespacedName{
-			Name:      "dex-" + idp.Name,
+			Name:      idp.ChildResourceName(),
 			Namespace: idp.Namespace,
 		}, &sts)
 		require.NoError(t, err)

@@ -1,13 +1,14 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: dex-api-ca
+  name: dex
   labels:
     app.kubernetes.io/component: provider
 spec:
-  isCA: true
-  secretName: dex-api-ca-tls
+  secretName: dex-tls
   issuerRef:
     name: root-ca
     kind: ClusterIssuer
-  commonName: Dex API CA
+  dnsNames:
+  - dex.default.svc.cluster.local
+  - dex-api.default.svc.cluster.local

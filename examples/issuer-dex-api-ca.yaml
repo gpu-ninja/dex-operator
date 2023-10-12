@@ -2,6 +2,8 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: dex-api-ca
+  labels:
+    app.kubernetes.io/component: provider
 spec:
   ca:
     secretName: dex-api-ca-tls

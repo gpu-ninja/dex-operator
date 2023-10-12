@@ -1,8 +1,10 @@
 apiVersion: traefik.containo.us/v1alpha1
 kind: ServersTransport
 metadata:
-  name: demo
+  name: dex
+  labels:
+    app.kubernetes.io/component: provider
 spec:
-  serverName: dex-demo.default.svc.cluster.local
+  serverName: dex.default.svc.cluster.local
   rootCAsSecrets:
   - root-ca-tls

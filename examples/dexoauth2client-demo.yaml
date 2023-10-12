@@ -4,7 +4,7 @@ metadata:
   name: demo
 spec:
   identityProviderRef:
-    name: demo
+    name: dex
   secretName: demo-client-secret
   redirectURIs:
-  - https://client.local.koopt.sh/callback
+  - http://demo-client.local.koopt.sh:8081/oauth2/callback

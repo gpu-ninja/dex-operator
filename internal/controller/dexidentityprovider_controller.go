@@ -302,7 +302,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 	} else {
 		sm := monitoringv1.ServiceMonitor{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dex-" + idp.Name,
+				Name:      idp.ChildResourceName(),
 				Namespace: idp.Namespace,
 			},
 		}
@@ -360,7 +360,7 @@ func (r *DexIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.
 	} else {
 		ing := networkingv1.Ingress{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "dex-" + idp.Name,
+				Name:      idp.ChildResourceName(),
 				Namespace: idp.Namespace,
 			},
 		}
@@ -578,7 +578,7 @@ func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.Dex
 
 	sts := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dex-" + idp.Name,
+			Name:      idp.ChildResourceName(),
 			Namespace: idp.Namespace,
 			Labels:    make(map[string]string),
 		},
@@ -644,7 +644,7 @@ func (r *DexIdentityProviderReconciler) statefulSetTemplate(idp *dexv1alpha1.Dex
 func (r *DexIdentityProviderReconciler) isStatefulSetReady(ctx context.Context, idp *dexv1alpha1.DexIdentityProvider) (bool, error) {
 	sts := appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dex-" + idp.Name,
+			Name:      idp.ChildResourceName(),
 			Namespace: idp.Namespace,
 		},
 	}
@@ -675,7 +675,7 @@ func (r *DexIdentityProviderReconciler) webServiceTemplate(idp *dexv1alpha1.DexI
 
 	svc := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "dex-" + idp.Name,
+			Name:        idp.ChildResourceName(),
 			Namespace:   idp.Namespace,
 			Labels:      make(map[string]string),
 			Annotations: idp.Spec.Web.Annotations,
@@ -721,7 +721,7 @@ func (r *DexIdentityProviderReconciler) ingressTemplate(idp *dexv1alpha1.DexIden
 				PathType: &pathSpec.PathType,
 				Backend: networkingv1.IngressBackend{
 					Service: &networkingv1.IngressServiceBackend{
-						Name: "dex-" + idp.Name,
+						Name: idp.ChildResourceName(),
 						Port: networkingv1.ServiceBackendPort{
 							Number: servicePort,
 						},
@@ -746,7 +746,7 @@ func (r *DexIdentityProviderReconciler) ingressTemplate(idp *dexv1alpha1.DexIden
 			APIVersion: networkingv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "dex-" + idp.Name,
+			Name:        idp.ChildResourceName(),
 			Namespace:   idp.Namespace,
 			Labels:      make(map[string]string),
 			Annotations: idp.Spec.Ingress.Annotations,
@@ -792,7 +792,7 @@ func (r *DexIdentityProviderReconciler) apiServiceTemplate(idp *dexv1alpha1.DexI
 
 	svc := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        fmt.Sprintf("dex-%s-api", idp.Name),
+			Name:        idp.ChildResourceName("api"),
 			Namespace:   idp.Namespace,
 			Labels:      make(map[string]string),
 			Annotations: idp.Spec.GRPC.Annotations,
@@ -824,7 +824,7 @@ func (r *DexIdentityProviderReconciler) apiServiceTemplate(idp *dexv1alpha1.DexI
 func (r *DexIdentityProviderReconciler) metricsServiceTemplate(idp *dexv1alpha1.DexIdentityProvider) (*corev1.Service, error) {
 	svc := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("dex-%s-metrics", idp.Name),
+			Name:      idp.ChildResourceName("metrics"),
 			Namespace: idp.Namespace,
 			Labels:    make(map[string]string),
 		},
@@ -860,7 +860,7 @@ func (r *DexIdentityProviderReconciler) metricsServiceTemplate(idp *dexv1alpha1.
 func (r *DexIdentityProviderReconciler) serviceMonitorTemplate(idp *dexv1alpha1.DexIdentityProvider) (*monitoringv1.ServiceMonitor, error) {
 	sm := monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "dex-" + idp.Name,
+			Name:      idp.ChildResourceName(),
 			Namespace: idp.Namespace,
 			Labels:    make(map[string]string),
 		},
@@ -908,7 +908,7 @@ func (r *DexIdentityProviderReconciler) configSecretTemplate(ctx context.Context
 
 	secret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("dex-%s-config", idp.Name),
+			Name:      idp.ChildResourceName("config"),
 			Namespace: idp.Namespace,
 			Labels:    make(map[string]string),
 		},

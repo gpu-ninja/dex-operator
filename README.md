@@ -58,7 +58,7 @@ kapp deploy -y -a dex-operator -f https://github.com/gpu-ninja/dex-operator/rele
 #### Start an Identity Provider
 
 ```shell
-kubectl apply -f examples -l app.kubernetes.io/component=provider
+kubectl apply --recursive -f examples -l app.kubernetes.io/component=provider
 ```
 
 #### Create a User

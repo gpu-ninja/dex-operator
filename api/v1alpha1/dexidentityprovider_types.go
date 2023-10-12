@@ -20,6 +20,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/gpu-ninja/dex-operator/api"
 	"github.com/gpu-ninja/operator-utils/reference"
@@ -352,6 +353,27 @@ func (d *DexIdentityProvider) ResolveReferences(ctx context.Context, reader clie
 	}
 
 	return true, nil
+}
+
+func (d *DexIdentityProvider) ChildResourceName(names ...string) string {
+	var name string
+	if len(names) > 0 {
+		name = strings.Join(names, "-")
+	}
+
+	if d.Name != "dex" {
+		if name == "" {
+			return fmt.Sprintf("dex-%s", d.Name)
+		}
+
+		return fmt.Sprintf("dex-%s-%s", d.Name, name)
+	} else {
+		if name == "" {
+			return "dex"
+		}
+
+		return fmt.Sprintf("dex-%s", name)
+	}
 }
 
 func init() {

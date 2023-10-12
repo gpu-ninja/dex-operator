@@ -4,6 +4,6 @@ metadata:
   name: demo
 spec:
   identityProviderRef:
-    name: demo
+    name: dex
   secretName: demo-user-password
   email: demo@example.com

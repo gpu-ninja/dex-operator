@@ -64,7 +64,7 @@ func TestOperator(t *testing.T) {
 
 	ctx := context.Background()
 	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-		user, err := dynamicClient.Resource(gvr).Namespace("default").Get(ctx, "demo", metav1.GetOptions{})
+		user, err := dynamicClient.Resource(gvr).Namespace("default").Get(ctx, "dex", metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -174,7 +174,7 @@ func TestOperator(t *testing.T) {
 		Resource: "dexidentityproviders",
 	}
 
-	err = dynamicClient.Resource(gvr).Namespace("default").Delete(ctx, "demo", metav1.DeleteOptions{})
+	err = dynamicClient.Resource(gvr).Namespace("default").Delete(ctx, "dex", metav1.DeleteOptions{})
 	require.NoError(t, err)
 
 	t.Log("Waiting for demo-client-secret to be deleted")
